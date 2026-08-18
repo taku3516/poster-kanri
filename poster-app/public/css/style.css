@@ -823,3 +823,68 @@ p:last-child { margin-bottom: 0; }
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
   font-variant-numeric: tabular-nums;
 }
+
+/* ------------------------------------------------------------------ */
+/* 絞り込み                                                            */
+/* ------------------------------------------------------------------ */
+
+.toolbar--filters {
+  padding-top: var(--space-3);
+  border-top: var(--border);
+  font-size: 14px;
+}
+
+.toolbar--filters .select { min-height: 38px; font-size: 14px; }
+
+.filter-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.filter-flags label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* 絞り込み中であることが分かるようにする。件数が合わないと悩まないため */
+.is-filtered {
+  border-left: 4px solid var(--blue);
+  padding-left: var(--space-3);
+}
+
+/* 押せる数値・棒は、押せると分かるようにする */
+.kpi--link { cursor: pointer; }
+.kpi--link:hover { background: var(--gray-50); }
+.kpi--link:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+.bars__row-button {
+  display: contents;
+  cursor: pointer;
+}
+
+/* 押せる棒の見出し */
+.bars__label--link {
+  font: inherit;
+  text-align: left;
+  color: var(--blue);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.bars__label--link:hover { color: var(--blue-dark); }
+.bars__label--link:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+/* 押せる数値のまとまり */
+button.kpi {
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}

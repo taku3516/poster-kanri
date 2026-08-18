@@ -24,6 +24,10 @@ import {
 } from './table.js';
 
 import { createMap } from './map.js';
+import {
+  emptyFilters, isFiltered, applyFilters, describeFilters, nextPosterNo,
+  FLAG_OPTIONS, DAYS_OPTIONS,
+} from './filters.js';
 import { summarize, byDistrict, stalest, lastRefreshedOn } from './stats.js';
 import {
   PALETTE, modeForColumn, defaultRuleFor, REFRESHED_FIELD, bucketOf, buildLegend,
@@ -78,7 +82,7 @@ const TYPE_LABELS = {
 const state = {
   uid: '', candidates: [], currentId: '',
   posters: [], unwatch: null,
-  sortKey: 'no', sortDir: 'asc', search: '',
+  sortKey: 'no', sortDir: 'asc', filters: emptyFilters(),
   editingId: null, draft: null,
   map: null,
   editingRule: null,
@@ -232,6 +236,7 @@ async function start() {
       (posters) => {
         state.posters = posters;
         showError('list-error', 'list-error-text', '');
+        renderFilterControls();
         renderTable();
         renderMap();
         renderDashboard();
@@ -252,7 +257,7 @@ async function start() {
     const candidate = current();
     if (candidate === undefined) return [];
 
-    const filtered = filterPosters(state.posters, candidate.columns, state.search);
+    const filtered = applyFilters(state.posters, candidate.columns, state.filters, todayText());
     const sortColumn = candidate.columns.find((c) => c.key === state.sortKey);
     return sortColumn === undefined
       ? filtered
@@ -315,17 +320,137 @@ async function start() {
     }));
 
     const total = state.posters.length;
-    el('list-count').textContent = state.search.trim() === ''
-      ? total + ' 件'
-      : rows.length + ' 件 / 全 ' + total + ' 件';
+    const filtered = isFiltered(state.filters);
+    el('list-count').textContent = filtered
+      ? rows.length + ' 件 / 全 ' + total + ' 件（' + describeFilters(state.filters) + '）'
+      : total + ' 件';
+    el('list-count').classList.toggle('is-filtered', filtered);
+    el('filter-clear').hidden = !filtered;
 
     el('list-empty').hidden = rows.length > 0;
   }
 
   el('search').addEventListener('input', (event) => {
-    state.search = /** @type {HTMLInputElement} */ (event.target).value;
-    renderTable();
+    state.filters.text = /** @type {HTMLInputElement} */ (event.target).value;
+    onFiltersChanged();
   });
+
+
+  // ================================================================ 絞り込み
+
+  /**
+   * 絞り込みが変わったときに、一覧・地図・見出しをまとめて描き直す。
+   * @returns {void}
+   */
+  function onFiltersChanged() {
+    renderTable();
+    renderMap();
+  }
+
+  /**
+   * 絞り込み欄の選択肢を、いまのデータから作る。
+   * 実際に使われている値だけを並べる（存在しない地区を選べても意味がないため）。
+   * @returns {void}
+   */
+  function renderFilterControls() {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    /** @param {string} id @param {string[]} values @param {string} allLabel @param {string} selected */
+    const fill = (id, values, allLabel, selected) => {
+      const select = /** @type {HTMLSelectElement} */ (el(id));
+      const all = document.createElement('option');
+      all.value = '';
+      all.textContent = allLabel;
+      all.selected = selected === '';
+      select.replaceChildren(all, ...values.map((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        option.selected = value === selected;
+        return option;
+      }));
+    };
+
+    const distinct = (key) => [...new Set(
+      state.posters.map((p) => String(p[key] ?? '').trim()).filter((v) => v !== ''),
+    )].sort((a, b) => a.localeCompare(b, 'ja'));
+
+    fill('filter-district', distinct('district'), 'すべての地区', state.filters.district);
+    fill('filter-status', distinct('status'), 'すべての状態', state.filters.status);
+
+    const days = /** @type {HTMLSelectElement} */ (el('filter-days'));
+    days.replaceChildren(...DAYS_OPTIONS.map((option) => {
+      const node = document.createElement('option');
+      node.value = option.value === null ? '' : String(option.value);
+      node.textContent = option.value === null ? '経過は問わない' : option.label;
+      node.selected = option.value === state.filters.minDays;
+      return node;
+    }));
+
+    el('filter-flags').replaceChildren(...FLAG_OPTIONS.map((option) => {
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = state.filters.flags.includes(option.key);
+      input.addEventListener('change', () => {
+        state.filters.flags = input.checked
+          ? [...state.filters.flags, option.key]
+          : state.filters.flags.filter((k) => k !== option.key);
+        onFiltersChanged();
+      });
+      label.append(input, document.createTextNode(option.label));
+      return label;
+    }));
+
+    /** @type {HTMLInputElement} */ (el('filter-nocoord')).checked = state.filters.onlyNoCoord;
+  }
+
+  el('filter-district').addEventListener('change', (event) => {
+    state.filters.district = /** @type {HTMLSelectElement} */ (event.target).value;
+    onFiltersChanged();
+  });
+
+  el('filter-status').addEventListener('change', (event) => {
+    state.filters.status = /** @type {HTMLSelectElement} */ (event.target).value;
+    onFiltersChanged();
+  });
+
+  el('filter-days').addEventListener('change', (event) => {
+    const value = /** @type {HTMLSelectElement} */ (event.target).value;
+    state.filters.minDays = value === '' ? null : Number(value);
+    onFiltersChanged();
+  });
+
+  el('filter-nocoord').addEventListener('change', (event) => {
+    state.filters.onlyNoCoord = /** @type {HTMLInputElement} */ (event.target).checked;
+    onFiltersChanged();
+  });
+
+  /** 絞り込みをすべて解除する @returns {void} */
+  function clearFilters() {
+    state.filters = emptyFilters();
+    /** @type {HTMLInputElement} */ (el('search')).value = '';
+    renderFilterControls();
+    onFiltersChanged();
+  }
+
+  el('filter-clear').addEventListener('click', clearFilters);
+  el('map-filter-clear').addEventListener('click', clearFilters);
+
+  /**
+   * 指定した絞り込みを当てて、一覧を開く。
+   * ダッシュボードの数字から飛んでくるときに使う。
+   * @param {Partial<import('./filters.js').Filters>} patch
+   * @returns {void}
+   */
+  function focusList(patch) {
+    state.filters = { ...emptyFilters(), ...patch };
+    /** @type {HTMLInputElement} */ (el('search')).value = state.filters.text;
+    renderFilterControls();
+    showTab('list');
+    onFiltersChanged();
+  }
 
   // ================================================================ 編集
 
@@ -426,7 +551,8 @@ async function start() {
 
     state.editingId = poster === null ? null : poster.id;
     state.draft = poster === null
-      ? { ...createEmptyPoster(candidate.columns), ...(prefill ?? {}) }
+      // 新規は番号を自動で入れる。手で入れ直すこともできる
+      ? { ...createEmptyPoster(candidate.columns), no: nextPosterNo(state.posters), ...(prefill ?? {}) }
       : { ...poster, custom: { ...(poster.custom ?? {}) } };
 
     el('edit-title').textContent = poster === null ? '掲示場所の新規追加' : '掲示場所の編集';
@@ -532,14 +658,23 @@ async function start() {
     const candidate = current();
     if (candidate === undefined) return;
 
-    const shown = state.map.setPosters(state.posters, candidate.columns, colorForFactory());
+    const rows = visibleRows();
+    const shown = state.map.setPosters(rows, candidate.columns, colorForFactory(rows));
     // 描き直すと印が作り直されるので、移動の許可を入れ直す
     state.map.setDragEnabled(
       /** @type {HTMLInputElement} */ (el('map-drag-mode')).checked,
     );
     renderLegend();
-    const pending = state.posters.filter(needsGeocoding).length;
-    const hidden = state.posters.filter((p) => p.showOnMap === false).length;
+    const pending = rows.filter(needsGeocoding).length;
+    const hidden = rows.filter((p) => p.showOnMap === false).length;
+
+    // 絞り込みに気づかないまま「ピンが足りない」と悩まないようにする
+    const filtered = isFiltered(state.filters);
+    el('map-filtered').hidden = !filtered;
+    if (filtered) {
+      el('map-filtered-text').textContent =
+        describeFilters(state.filters) + '（' + rows.length + ' 件 / 全 ' + state.posters.length + ' 件）';
+    }
 
     const parts = ['ピン ' + shown + ' 件'];
     if (pending > 0) parts.push('座標なし ' + pending + ' 件');
@@ -787,7 +922,7 @@ async function start() {
       return;
     }
 
-    const legend = buildLegend(rule, state.posters, todayText());
+    const legend = buildLegend(rule, visibleRows(), todayText());
 
     container.replaceChildren(...legend.map((row) => {
       const item = document.createElement('span');
@@ -813,13 +948,14 @@ async function start() {
    * ピンの色を決める関数を返す。色分けしていなければ null。
    * @returns {((poster: Record<string, *>) => {label: string, hex: string}) | null}
    */
-  function colorForFactory() {
+  function colorForFactory(posters = null) {
     const rule = activeRule();
     if (rule === null) return null;
 
     const today = todayText();
+    const source = posters ?? state.posters;
     // カテゴリのときは凡例で決めた割り当てに従う。毎回作り直さない
-    const legend = rule.mode === 'category' ? buildLegend(rule, state.posters, today) : null;
+    const legend = rule.mode === 'category' ? buildLegend(rule, source, today) : null;
 
     return (poster) => {
       const bucket = bucketOf(rule, poster, today, legend);
@@ -1049,12 +1185,19 @@ async function start() {
 
   /**
    * 数値の見出し（KPI）を1枚作る。
-   * @param {{label: string, value: number|string, unit?: string, note?: string, tone?: string}} spec
+   * @param {{label: string, value: number|string, unit?: string, note?: string,
+   *          tone?: string, onClick?: () => void}} spec
    * @returns {HTMLElement}
    */
   function buildKpi(spec) {
-    const box = document.createElement('div');
-    box.className = 'kpi' + (spec.tone ? ' kpi--' + spec.tone : '');
+    const clickable = typeof spec.onClick === 'function';
+    const box = document.createElement(clickable ? 'button' : 'div');
+    if (clickable) {
+      /** @type {HTMLButtonElement} */ (box).type = 'button';
+      box.addEventListener('click', spec.onClick);
+    }
+    box.className = 'kpi' + (spec.tone ? ' kpi--' + spec.tone : '')
+      + (clickable ? ' kpi--link' : '');
 
     const label = document.createElement('div');
     label.className = 'kpi__label';
@@ -1084,7 +1227,7 @@ async function start() {
   /**
    * 横棒グラフを描く。最大値を基準に幅の比率で表す。
    * @param {string} containerId
-   * @param {{label: string, value: number, tone?: string}[]} rows
+   * @param {{label: string, value: number, tone?: string, onClick?: () => void}[]} rows
    * @param {string} unit
    * @returns {void}
    */
@@ -1102,8 +1245,15 @@ async function start() {
 
     const nodes = [];
     for (const row of rows) {
-      const label = document.createElement('div');
-      label.className = 'bars__label';
+      const clickable = typeof row.onClick === 'function';
+
+      const label = document.createElement(clickable ? 'button' : 'div');
+      if (clickable) {
+        /** @type {HTMLButtonElement} */ (label).type = 'button';
+        label.addEventListener('click', row.onClick);
+        label.title = row.label + ' で絞り込む';
+      }
+      label.className = 'bars__label' + (clickable ? ' bars__label--link' : '');
       label.textContent = row.label;
 
       const track = document.createElement('div');
@@ -1134,17 +1284,20 @@ async function start() {
     // --- 数値の見出し ---
     el('kpi-row').replaceChildren(
       buildKpi({ label: '掲示場所', value: s.total, unit: '件',
-                 note: s.removed > 0 ? '撤去済 ' + s.removed + ' 件を除く' : '' }),
+                 note: s.removed > 0 ? '撤去済 ' + s.removed + ' 件を除く' : '',
+                 onClick: () => focusList({}) }),
       buildKpi({ label: '掲示枚数', value: s.sheets, unit: '枚' }),
       buildKpi({ label: '貼替から1年以上', value: s.overOneYear, unit: '件',
                  tone: s.overOneYear > 0 ? 'attention' : undefined,
-                 note: '次に回る候補' }),
+                 note: '押すと一覧に出ます',
+                 onClick: () => focusList({ minDays: 365 }) }),
       buildKpi({ label: '日付が不明', value: s.unknownDate, unit: '件',
                  tone: s.unknownDate > 0 ? 'alert' : undefined,
                  note: '掲示日も貼替日も未入力' }),
       buildKpi({ label: '地図に出ていない', value: s.noCoord + s.hiddenOnMap, unit: '件',
                  tone: s.noCoord > 0 ? 'attention' : undefined,
-                 note: '座標なし ' + s.noCoord + ' ／ 掲載を外している ' + s.hiddenOnMap }),
+                 note: '座標なし ' + s.noCoord + ' ／ 掲載を外している ' + s.hiddenOnMap,
+                 onClick: () => focusList({ onlyNoCoord: true }) }),
     );
 
     // --- 種別 ---
@@ -1157,15 +1310,19 @@ async function start() {
 
     // --- 現場の条件 ---
     renderBars('bars-condition', [
-      { label: '要脚立', value: s.needLadder, tone: 'attention' },
-      { label: 'プラ段', value: s.plaDan, tone: 'muted' },
-      { label: '室内', value: s.indoor, tone: 'muted' },
-      { label: '他党あり', value: s.otherParty, tone: 'muted' },
-    ], ' 件');
+      { label: '要脚立', value: s.needLadder, tone: 'attention', flag: 'needLadder' },
+      { label: 'プラ段', value: s.plaDan, tone: 'muted', flag: 'plaDan' },
+      { label: '室内', value: s.indoor, tone: 'muted', flag: 'indoor' },
+      { label: '他党あり', value: s.otherParty, tone: 'muted', flag: 'otherParty' },
+    ].map((row) => ({ ...row, onClick: () => focusList({ flags: [row.flag] }) })), ' 件');
 
     // --- 地区別 ---
     renderBars('bars-district',
-      byDistrict(state.posters).map((row) => ({ label: row.district, value: row.count })),
+      byDistrict(state.posters).map((row) => ({
+        label: row.district,
+        value: row.count,
+        onClick: () => focusList({ district: row.district === '未設定' ? '' : row.district }),
+      })),
       ' 件');
 
     // --- 貼替が古い順 ---
@@ -1358,7 +1515,7 @@ async function start() {
   el('candidate-select').addEventListener('change', (event) => {
     state.currentId = /** @type {HTMLSelectElement} */ (event.target).value;
     localStorage.setItem(lastCandidateKey(state.uid), state.currentId);
-    state.search = '';
+    state.filters = emptyFilters();
     /** @type {HTMLInputElement} */ (el('search')).value = '';
     renderCandidate();
     renderColumns();

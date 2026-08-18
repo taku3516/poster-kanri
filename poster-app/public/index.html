@@ -122,6 +122,19 @@
           <input class="input" type="search" id="search" placeholder="すべての列から検索" autocomplete="off">
           <button type="button" class="button button--primary" id="poster-add">新規追加</button>
         </div>
+        <div class="toolbar toolbar--filters">
+          <select class="select" id="filter-district" aria-label="地区で絞り込む"></select>
+          <select class="select" id="filter-status" aria-label="状態で絞り込む"></select>
+          <select class="select" id="filter-days" aria-label="経過期間で絞り込む"></select>
+          <span class="filter-flags" id="filter-flags"></span>
+          <label class="map-toggle">
+            <input type="checkbox" id="filter-nocoord">座標なしのみ
+          </label>
+          <button type="button" class="button button--quiet" id="filter-clear" hidden>
+            絞り込みを解除
+          </button>
+        </div>
+
         <p class="text-sub" id="list-count">読み込んでいます…</p>
 
         <div class="table-wrap">
@@ -162,6 +175,11 @@
           <label class="map-toggle" for="color-rule-select">色分け</label>
           <select class="select" id="color-rule-select"></select>
           <button type="button" class="button button--quiet" id="color-rule-edit">設定</button>
+        </div>
+        <div class="notice notice--info" id="map-filtered" hidden>
+          <span class="notice__label">絞り込み中</span>
+          <span id="map-filtered-text"></span>
+          <button type="button" class="button button--quiet" id="map-filter-clear">解除</button>
         </div>
         <p class="text-sub" id="map-status"></p>
         <div id="map" class="map"></div>
