@@ -210,3 +210,63 @@ test('紹介者別でも撤去済は数えない', async () => {
   const rows = byIntroducer([p({ introducer: '田中', status: '撤去済' })]);
   assert.equal(rows.length, 0);
 });
+
+// ---------------------------------------------------------------- 月別の実績
+
+test('月ごとの貼替件数を数える', async () => {
+  const { monthlyReplacements } = await import('../public/js/stats.js');
+  const rows = monthlyReplacements([
+    p({ lastReplacedOn: '2026-08-01' }),
+    p({ lastReplacedOn: '2026-08-20' }),
+    p({ lastReplacedOn: '2026-07-05' }),
+  ], TODAY, 3);
+
+  const find = (m) => rows.find((r) => r.month === m);
+  assert.equal(find('2026-08').count, 2);
+  assert.equal(find('2026-07').count, 1);
+});
+
+test('実績が無い月も0として並べる（活動が途切れた月が見えるように）', async () => {
+  const { monthlyReplacements } = await import('../public/js/stats.js');
+  const rows = monthlyReplacements([p({ lastReplacedOn: '2026-08-01' })], TODAY, 3);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows.map((r) => r.month), ['2026-06', '2026-07', '2026-08']);
+  assert.equal(rows[0].count, 0);
+});
+
+test('古い月から新しい月へ並ぶ', async () => {
+  const { monthlyReplacements } = await import('../public/js/stats.js');
+  const rows = monthlyReplacements([], TODAY, 6);
+  for (let i = 1; i < rows.length; i += 1) {
+    assert.ok(rows[i - 1].month < rows[i].month, '並びが崩れている');
+  }
+});
+
+test('期間より前の実績は数えない', async () => {
+  const { monthlyReplacements } = await import('../public/js/stats.js');
+  const rows = monthlyReplacements([p({ lastReplacedOn: '2020-01-01' })], TODAY, 3);
+  assert.equal(rows.reduce((sum, r) => sum + r.count, 0), 0);
+});
+
+// ---------------------------------------------------------------- 所有者別
+
+test('所有者ごとに件数を数え、複数か所の方を上に出す', async () => {
+  const { byOwner } = await import('../public/js/stats.js');
+  const rows = byOwner([
+    p({ owner: '田中', size3L: 1 }),
+    p({ owner: '田中', size3L: 1 }),
+    p({ owner: '佐藤', size3L: 5 }),
+  ]);
+  assert.deepEqual(rows[0], { owner: '田中', count: 2, sheets: 2 });
+});
+
+test('1か所だけの所有者は出さない（複数か所の方を見たいため）', async () => {
+  const { byOwner } = await import('../public/js/stats.js');
+  const rows = byOwner([p({ owner: '田中' }), p({ owner: '佐藤' }), p({ owner: '田中' })]);
+  assert.deepEqual(rows.map((r) => r.owner), ['田中']);
+});
+
+test('所有者が空のものは数えない', async () => {
+  const { byOwner } = await import('../public/js/stats.js');
+  assert.equal(byOwner([p({ owner: '' }), p({ owner: '' })]).length, 0);
+});

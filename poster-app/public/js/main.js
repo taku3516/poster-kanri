@@ -31,6 +31,7 @@ import {
 import { distanceOf, formatDistance, sortByDistance } from './distance.js';
 import {
   summarize, byDistrict, stalest, lastRefreshedOn, ageDistribution, byIntroducer,
+  monthlyReplacements, byOwner,
 } from './stats.js';
 import { coverageByTown, formatPer10k, BASIS } from './coverage.js';
 import { hasChanges } from './changes.js';
@@ -719,6 +720,42 @@ async function start() {
     onFiltersChanged();
   }
 
+
+
+  /**
+   * 絞り込んだ結果を印刷する。
+   *
+   * 画面のままだと道具立て（検索欄や操作ボタン）まで載ってしまう。
+   * 紙で見たいのは「いつの・どの条件の・何件か」と表そのものなので、
+   * 見出しを付けてそれ以外を隠す。
+   *
+   * @returns {void}
+   */
+  function printList() {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    const rows = visibleRows();
+    const condition = isFiltered(state.filters)
+      ? describeFilters(state.filters)
+      : 'すべての掲示場所';
+
+    const head = el('print-head');
+    head.replaceChildren();
+
+    const title = document.createElement('div');
+    title.className = 'print-head__title';
+    title.textContent = candidate.name + ' ポスター掲示場所';
+
+    const meta = document.createElement('div');
+    meta.className = 'print-head__meta';
+    meta.textContent = condition + '　' + rows.length + ' 件　（' + todayText() + ' 時点）';
+
+    head.append(title, meta);
+    window.print();
+  }
+
+  el('list-print').addEventListener('click', printList);
 
   // ================================================================ 表の中で直接編集
 
@@ -1825,6 +1862,28 @@ async function start() {
           : () => focusList(row.minDays === null ? {} : { minDays: row.minDays }),
       })),
       ' 件');
+
+    // --- 月別の貼替実績 ---
+    renderBars('bars-monthly',
+      monthlyReplacements(state.posters, today, 12).map((row) => ({
+        // 画面が狭いので「2026-08」ではなく「8月」だけ出す
+        label: String(Number(row.month.slice(5, 7))) + '月',
+        value: row.count,
+      })),
+      ' 件');
+
+    // --- 複数か所の所有者 ---
+    const owners = byOwner(state.posters);
+    renderBars('bars-owner',
+      owners.slice(0, 10).map((row) => ({
+        label: row.owner,
+        value: row.count,
+        onClick: () => focusList({ text: row.owner }),
+      })),
+      ' か所');
+    el('owner-note').textContent = owners.length === 0
+      ? '2か所以上を貸してくださっている方はまだいません。'
+      : (owners.length > 10 ? '全部で ' + owners.length + ' 名。上位10名を表示しています。' : '');
 
     // --- 人口あたりのカバー率 ---
     renderCoverage();

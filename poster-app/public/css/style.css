@@ -1037,3 +1037,82 @@ button.kpi {
 
 /* 吹き出しの三角は出さない（番号だけ見せたい） */
 .pin-label::before { display: none; }
+
+/* ------------------------------------------------------------------ */
+/* 印刷                                                                */
+/* ------------------------------------------------------------------ */
+
+/* 印刷用の見出しは画面には出さない */
+.print-head { display: none; }
+
+@media print {
+  /*
+   * 紙で見たいのは「いつの・どの条件の・何件か」と表そのもの。
+   * 検索欄や操作ボタンは紙の上では押せず、場所を取るだけなので隠す。
+   */
+  .app-header,
+  .syncbar,
+  .tabs,
+  .toolbar,
+  .bulkbar,
+  .notice,
+  #list-count,
+  #panel-map,
+  #panel-dash,
+  #panel-settings,
+  .table th.is-select,
+  .table td.is-select,
+  .dialog { display: none !important; }
+
+  body { background: var(--white); }
+
+  .app-main { max-width: none; padding: 0; }
+
+  .panel {
+    border: none;
+    padding: 0;
+  }
+
+  .print-head { display: block; margin-bottom: 8px; }
+
+  .print-head__title {
+    font-size: 14pt;
+    font-weight: 700;
+  }
+
+  .print-head__meta {
+    font-size: 9pt;
+    color: #000;
+    margin-top: 2px;
+  }
+
+  /* 横スクロールは紙では効かないので、収まるように小さくする */
+  .table-wrap { overflow: visible; border: none; }
+
+  .table {
+    font-size: 8pt;
+    white-space: normal;
+  }
+
+  .table th, .table td {
+    padding: 2px 4px;
+    border-bottom: 1px solid #999;
+  }
+
+  /* 画面用の固定列は紙では不要 */
+  .table th:first-child,
+  .table td:first-child {
+    position: static;
+    border-right: none;
+  }
+
+  .table thead th { position: static; background: #eee; }
+
+  /* 行が途中で切れないようにする */
+  .table tr { page-break-inside: avoid; }
+
+  /* 番号は紙では文字として出す */
+  .cell-open { color: #000; text-decoration: none; }
+
+  @page { size: A4 landscape; margin: 10mm; }
+}

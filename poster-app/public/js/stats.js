@@ -244,3 +244,64 @@ export function byIntroducer(posters) {
   return [...groups.values()].sort((a, b) =>
     b.count - a.count || b.sheets - a.sheets || a.introducer.localeCompare(b.introducer, 'ja'));
 }
+
+/**
+ * 月ごとの貼替件数。活動量の推移を見る。
+ *
+ * 実績が無い月も0として並べる。抜けると「活動が途切れた月」が
+ * 詰めて表示され、途切れたこと自体が見えなくなるため。
+ *
+ * @param {Record<string, *>[]} posters
+ * @param {string} today 'YYYY-MM-DD'
+ * @param {number} months さかのぼる月数
+ * @returns {{month: string, count: number}[]}
+ */
+export function monthlyReplacements(posters, today, months) {
+  const [year, month] = String(today).split('-').map(Number);
+
+  /** @type {Map<string, number>} */
+  const slots = new Map();
+  for (let back = months - 1; back >= 0; back -= 1) {
+    const d = new Date(Date.UTC(year, month - 1 - back, 1));
+    const key = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+    slots.set(key, 0);
+  }
+
+  for (const poster of posters.filter((p) => !isRemoved(p))) {
+    const text = String(poster.lastReplacedOn ?? '').trim();
+    if (text === '') continue;
+    const key = text.slice(0, 7);
+    if (slots.has(key)) slots.set(key, slots.get(key) + 1);
+  }
+
+  return [...slots.entries()].map(([month2, count]) => ({ month: month2, count }));
+}
+
+/**
+ * 所有者ごとの件数と枚数。複数か所を貸してくれている方を見る。
+ *
+ * 1か所だけの所有者は出さない。ほとんどが1か所なので、
+ * 混ぜると「複数か所を貸してくれている方」が埋もれてしまう。
+ *
+ * @param {Record<string, *>[]} posters
+ * @returns {{owner: string, count: number, sheets: number}[]}
+ */
+export function byOwner(posters) {
+  /** @type {Map<string, {owner: string, count: number, sheets: number}>} */
+  const groups = new Map();
+
+  for (const poster of posters.filter((p) => !isRemoved(p))) {
+    const name = String(poster.owner ?? '').trim();
+    if (name === '') continue;
+
+    const row = groups.get(name) ?? { owner: name, count: 0, sheets: 0 };
+    row.count += 1;
+    row.sheets += sheetsOf(poster);
+    groups.set(name, row);
+  }
+
+  return [...groups.values()]
+    .filter((row) => row.count >= 2)
+    .sort((a, b) => b.count - a.count || b.sheets - a.sheets
+      || a.owner.localeCompare(b.owner, 'ja'));
+}

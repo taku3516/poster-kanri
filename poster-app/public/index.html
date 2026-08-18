@@ -128,6 +128,7 @@
           <button type="button" class="button button--primary" id="poster-add">新規追加</button>
           <button type="button" class="button button--quiet" id="poster-duplicate">選んだ行を複製</button>
           <button type="button" class="button button--quiet" id="list-locate">現在地から近い順</button>
+          <button type="button" class="button button--quiet" id="list-print">印刷・持ち出し</button>
         </div>
         <div class="toolbar toolbar--filters">
           <select class="select" id="filter-district" aria-label="地区で絞り込む"></select>
@@ -159,6 +160,8 @@
           セルを押すとその場で直せます（Enterで確定、Escで取り消し）。
           <strong>番号</strong>を押すと詳細が開きます。
         </p>
+
+        <div class="print-head" id="print-head" aria-hidden="true"></div>
 
         <div class="table-wrap">
           <table class="table">
@@ -262,6 +265,23 @@
           件数の多い順です。少ない地区・出てこない地区が手薄な場所です。
         </p>
         <div class="bars" id="bars-district"></div>
+      </div>
+
+      <div class="grid2">
+        <div class="panel">
+          <h2>月別の貼替実績</h2>
+          <p class="text-sub">直近12か月。実績が無い月も並べています。</p>
+          <div class="bars" id="bars-monthly"></div>
+        </div>
+
+        <div class="panel">
+          <h2>複数か所の所有者</h2>
+          <p class="text-sub">
+            2か所以上を貸してくださっている方です。押すとその方の分が一覧に出ます。
+          </p>
+          <div class="bars" id="bars-owner"></div>
+          <p class="text-sub" id="owner-note"></p>
+        </div>
       </div>
 
       <div class="panel">
