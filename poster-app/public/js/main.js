@@ -23,6 +23,9 @@ import {
   filterPosters,
 } from './table.js';
 
+import { createMap } from './map.js';
+import { geocodeAddress, reverseGeocode } from './geocode.js';
+
 /** @param {string} id @returns {HTMLElement} */
 function el(id) {
   const node = document.getElementById(id);
@@ -73,6 +76,7 @@ const state = {
   posters: [], unwatch: null,
   sortKey: 'no', sortDir: 'asc', search: '',
   editingId: null, draft: null,
+  map: null,
 };
 
 /** @returns {any} */
@@ -117,15 +121,23 @@ async function start() {
 
   // ================================================================ タブ
 
-  /** @param {'list'|'settings'} name @returns {void} */
+  /** @param {'list'|'map'|'settings'} name @returns {void} */
   function showTab(name) {
-    for (const key of ['list', 'settings']) {
+    for (const key of ['list', 'map', 'settings']) {
       el('panel-' + key).hidden = key !== name;
       el('tab-' + key).setAttribute('aria-selected', String(key === name));
+    }
+
+    if (name === 'map') {
+      ensureMap();
+      // 隠れている間に作られた地図は大きさが 0 のままなので測り直す
+      state.map?.refresh();
+      renderMap();
     }
   }
 
   el('tab-list').addEventListener('click', () => showTab('list'));
+  el('tab-map').addEventListener('click', () => showTab('map'));
   el('tab-settings').addEventListener('click', () => showTab('settings'));
 
   // ================================================================ 候補者
@@ -211,6 +223,7 @@ async function start() {
         state.posters = posters;
         showError('list-error', 'list-error-text', '');
         renderTable();
+        renderMap();
         el('fact-posters').textContent = posters.length + ' 件';
       },
       (error) => {
@@ -393,15 +406,16 @@ async function start() {
   /**
    * 編集画面を開く。poster が null なら新規。
    * @param {Record<string, *> | null} poster
+   * @param {Record<string, *> | null} [prefill] 新規のときの初期値
    * @returns {void}
    */
-  function openEditor(poster) {
+  function openEditor(poster, prefill = null) {
     const candidate = current();
     if (candidate === undefined) return;
 
     state.editingId = poster === null ? null : poster.id;
     state.draft = poster === null
-      ? createEmptyPoster(candidate.columns)
+      ? { ...createEmptyPoster(candidate.columns), ...(prefill ?? {}) }
       : { ...poster, custom: { ...(poster.custom ?? {}) } };
 
     el('edit-title').textContent = poster === null ? '掲示場所の新規追加' : '掲示場所の編集';
@@ -468,6 +482,178 @@ async function start() {
     } catch (error) {
       showError('edit-error', 'edit-error-text', toMessage(error));
     }
+  });
+
+
+  // ================================================================ 地図
+
+  /**
+   * その掲示場所が住所からの座標計算の対象かどうか。
+   * 座標が既にあるものは対象にしない（手で直した位置を壊さないため）。
+   * @param {Record<string, *>} poster
+   * @returns {boolean}
+   */
+  function needsGeocoding(poster) {
+    if (typeof poster.lat === 'number' && typeof poster.lng === 'number') return false;
+    return String(poster.address ?? '').trim() !== '';
+  }
+
+  /** 地図をまだ作っていなければ作る @returns {void} */
+  function ensureMap() {
+    if (state.map !== null) return;
+    try {
+      state.map = createMap('map', {
+        onMarkerClick: (posterId) => {
+          const poster = state.posters.find((p) => p.id === posterId);
+          if (poster !== undefined) openEditor(poster);
+        },
+        onMarkerMoved: (posterId, lat, lng) => void onMarkerMoved(posterId, lat, lng),
+        onMapClick: (lat, lng) => void onMapClick(lat, lng),
+      });
+    } catch (error) {
+      showError('map-error', 'map-error-text', toMessage(error));
+    }
+  }
+
+  /** ピンを描き直し、状況を伝える @returns {void} */
+  function renderMap() {
+    if (state.map === null) return;
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    const shown = state.map.setPosters(state.posters, candidate.columns);
+    const pending = state.posters.filter(needsGeocoding).length;
+    const hidden = state.posters.filter((p) => p.showOnMap === false).length;
+
+    const parts = ['ピン ' + shown + ' 件'];
+    if (pending > 0) parts.push('座標なし ' + pending + ' 件');
+    if (hidden > 0) parts.push('マップ掲載を外している ' + hidden + ' 件');
+    el('map-status').textContent = parts.join('／');
+  }
+
+  /**
+   * ピンを動かした。動かした位置を「確定」として印を付ける。
+   * これが無いと、次に住所から座標を求めたときに元へ戻ってしまう。
+   *
+   * @param {string} posterId
+   * @param {number} lat
+   * @param {number} lng
+   * @returns {Promise<void>}
+   */
+  async function onMarkerMoved(posterId, lat, lng) {
+    const candidate = current();
+    const poster = state.posters.find((p) => p.id === posterId);
+    if (candidate === undefined || poster === undefined) return;
+
+    try {
+      showError('map-error', 'map-error-text', '');
+      await db.savePoster(state.uid, candidate.id, posterId, {
+        ...poster, lat, lng, coordFixed: true,
+      });
+    } catch (error) {
+      showError('map-error', 'map-error-text', toMessage(error));
+    }
+  }
+
+  /**
+   * 地図を押して新規追加。押した場所の住所を引いて初期値に入れる。
+   * 番地までは分からないため、利用者に足してもらう。
+   *
+   * @param {number} lat
+   * @param {number} lng
+   * @returns {Promise<void>}
+   */
+  async function onMapClick(lat, lng) {
+    showError('map-error', 'map-error-text', '');
+    const found = await reverseGeocode(lat, lng);
+
+    openEditor(null, {
+      lat,
+      lng,
+      coordFixed: true, // 地図で置いた位置なので、再計算で動かさない
+      address: found?.address ?? '',
+      district: found?.district ?? '',
+      areaDetail: found?.areaDetail ?? '',
+    });
+  }
+
+  /**
+   * 座標が無いものを、住所から一括で求める。
+   *
+   * 座標があるものには触れない。地区・詳細エリアは空のときだけ埋める
+   * （手で直した値を上書きしないため）。
+   *
+   * @returns {Promise<void>}
+   */
+  async function onGeocodeAll() {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    const targets = state.posters.filter(needsGeocoding);
+    const button = /** @type {HTMLButtonElement} */ (el('map-geocode'));
+
+    if (targets.length === 0) {
+      el('map-status').textContent = '座標を求める対象がありません。';
+      return;
+    }
+
+    button.disabled = true;
+    showError('map-error', 'map-error-text', '');
+
+    let done = 0;
+    let failed = 0;
+
+    try {
+      for (const poster of targets) {
+        el('map-status').textContent =
+          '住所から座標を求めています… ' + (done + failed + 1) + ' / ' + targets.length;
+
+        const found = await geocodeAddress(String(poster.address));
+        if (found === null) {
+          failed += 1;
+          continue;
+        }
+
+        await db.savePoster(state.uid, candidate.id, poster.id, {
+          ...poster,
+          lat: found.lat,
+          lng: found.lng,
+          // 自動で求めた座標は「確定」にしない。あとで直せるようにする
+          coordFixed: poster.coordFixed === true,
+          district: String(poster.district ?? '') === '' ? found.district : poster.district,
+          areaDetail: String(poster.areaDetail ?? '') === '' ? found.areaDetail : poster.areaDetail,
+        });
+        done += 1;
+      }
+
+      el('map-status').textContent =
+        '完了：' + done + ' 件に座標を付けました' +
+        (failed > 0 ? '／' + failed + ' 件は住所から特定できませんでした' : '');
+
+      state.map?.fit();
+    } catch (error) {
+      showError('map-error', 'map-error-text', toMessage(error));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  el('map-geocode').addEventListener('click', () => void onGeocodeAll());
+  el('map-fit').addEventListener('click', () => state.map?.fit());
+
+  el('map-locate').addEventListener('click', async () => {
+    try {
+      showError('map-error', 'map-error-text', '');
+      await state.map?.locate();
+    } catch (error) {
+      showError('map-error', 'map-error-text', toMessage(error));
+    }
+  });
+
+  el('map-add-mode').addEventListener('change', (event) => {
+    const on = /** @type {HTMLInputElement} */ (event.target).checked;
+    state.map?.setAddMode(on);
+    if (on) el('map-status').textContent = '地図を押すと、その場所に新しい掲示場所を作ります。';
   });
 
   // ================================================================ 列

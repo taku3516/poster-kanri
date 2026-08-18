@@ -4,6 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ポスター管理</title>
+<!-- 地図。外部配信のため改ざん検知（integrity）を付ける -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+      crossorigin="anonymous">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+      integrity="sha384-pmjIAcz2bAn0xukfxADbZIb3t8oRT9Sv0rvO+BR5Csr6Dhqq+nZs59P0pPKQJkEV"
+      crossorigin="anonymous">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+      integrity="sha384-wgw+aLYNQ7dlhK47ZPK7FRACiq7ROZwgFNg0m04avm4CaXS+Z9Y7nMu8yNjBKYC+"
+      crossorigin="anonymous">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+        crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"
+        integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr"
+        crossorigin="anonymous"></script>
+
 <link rel="stylesheet" href="./css/style.css">
 </head>
 <body>
@@ -93,6 +110,7 @@
 
     <nav class="tabs" role="tablist">
       <button type="button" class="tab" id="tab-list" role="tab" aria-selected="true">一覧</button>
+      <button type="button" class="tab" id="tab-map" role="tab" aria-selected="false">地図</button>
       <button type="button" class="tab" id="tab-settings" role="tab" aria-selected="false">設定</button>
     </nav>
 
@@ -118,6 +136,32 @@
 
         <div class="notice notice--error" id="list-error" hidden>
           <span class="notice__label">エラー</span><span id="list-error-text"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 地図 ================= -->
+    <div id="panel-map" hidden>
+      <div class="panel">
+        <div class="toolbar">
+          <button type="button" class="button button--quiet" id="map-geocode">
+            住所から座標を求める
+          </button>
+          <button type="button" class="button button--quiet" id="map-locate">現在地</button>
+          <button type="button" class="button button--quiet" id="map-fit">全体を表示</button>
+          <label class="map-toggle">
+            <input type="checkbox" id="map-add-mode">
+            地図を押してピンを追加
+          </label>
+        </div>
+        <p class="text-sub" id="map-status"></p>
+        <div id="map" class="map"></div>
+        <p class="text-sub">
+          ピンをドラッグすると位置を直せます。直した位置は「座標確定」が付き、
+          住所からの再計算で戻りません。
+        </p>
+        <div class="notice notice--error" id="map-error" hidden>
+          <span class="notice__label">エラー</span><span id="map-error-text"></span>
         </div>
       </div>
     </div>

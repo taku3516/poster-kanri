@@ -597,3 +597,40 @@ p:last-child { margin-bottom: 0; }
   .dialog__form { max-height: 100vh; }
   .toolbar .input { max-width: none; }
 }
+
+/* ------------------------------------------------------------------ */
+/* 地図                                                                */
+/* ------------------------------------------------------------------ */
+
+.map {
+  height: min(70vh, 620px);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* Leaflet の操作部品が本文の見出しに重ならないようにする */
+  z-index: 0;
+}
+
+.map-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* 吹き出しの中身を本文と同じ書体に揃える */
+.leaflet-popup-content {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: var(--space-3);
+}
+
+/* 出典表示は消さない（OpenStreetMapの利用規約で必須） */
+.leaflet-control-attribution {
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .map { height: 60vh; }
+}
