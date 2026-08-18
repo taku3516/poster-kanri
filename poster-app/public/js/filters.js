@@ -32,6 +32,7 @@ export const DAYS_OPTIONS = Object.freeze([
  * @property {string} text        文字の検索
  * @property {string} district    地区（空はすべて）
  * @property {string} status      状態（空はすべて）
+ * @property {string} introducer  紹介者（空はすべて）
  * @property {string[]} flags     すべて満たす条件
  * @property {number|null} minDays 経過日数の下限
  * @property {boolean} onlyNoCoord 座標が無いものだけ
@@ -42,7 +43,10 @@ export const DAYS_OPTIONS = Object.freeze([
  * @returns {Filters}
  */
 export function emptyFilters() {
-  return { text: '', district: '', status: '', flags: [], minDays: null, onlyNoCoord: false };
+  return {
+    text: '', district: '', status: '', introducer: '',
+    flags: [], minDays: null, onlyNoCoord: false,
+  };
 }
 
 /**
@@ -54,6 +58,7 @@ export function isFiltered(filters) {
   return String(filters.text ?? '').trim() !== ''
     || filters.district !== ''
     || filters.status !== ''
+    || (filters.introducer ?? '') !== ''
     || (filters.flags ?? []).length > 0
     || filters.minDays !== null
     || filters.onlyNoCoord === true;
@@ -77,6 +82,11 @@ export function applyFilters(posters, columns, filters, today) {
 
   if (filters.status !== '') {
     rows = rows.filter((p) => String(p.status ?? '') === filters.status);
+  }
+
+  // 文字の検索だと所有者が同姓の行まで拾うため、紹介者だけを見る
+  if ((filters.introducer ?? '') !== '') {
+    rows = rows.filter((p) => String(p.introducer ?? '') === filters.introducer);
   }
 
   for (const flag of filters.flags ?? []) {
@@ -113,6 +123,7 @@ export function describeFilters(filters) {
   if (text !== '') parts.push('「' + text + '」を含む');
   if (filters.district !== '') parts.push('地区: ' + filters.district);
   if (filters.status !== '') parts.push('状態: ' + filters.status);
+  if ((filters.introducer ?? '') !== '') parts.push('紹介者: ' + filters.introducer);
 
   for (const flag of filters.flags ?? []) {
     const found = FLAG_OPTIONS.find((o) => o.key === flag);

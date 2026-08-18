@@ -29,7 +29,9 @@ import {
   FLAG_OPTIONS, DAYS_OPTIONS,
 } from './filters.js';
 import { distanceOf, formatDistance, sortByDistance } from './distance.js';
-import { summarize, byDistrict, stalest, lastRefreshedOn } from './stats.js';
+import {
+  summarize, byDistrict, stalest, lastRefreshedOn, ageDistribution, byIntroducer,
+} from './stats.js';
 import {
   PALETTE, modeForColumn, defaultRuleFor, REFRESHED_FIELD, bucketOf, buildLegend,
 } from './color-rules.js';
@@ -1477,6 +1479,8 @@ async function start() {
       const fill = document.createElement('div');
       fill.className = 'bars__fill' + (row.tone ? ' bars__fill--' + row.tone : '');
       fill.style.width = Math.round((row.value / max) * 100) + '%';
+      // 0件のときは棒を出さない。最小幅のせいで「少しある」ように見えるため
+      if (row.value === 0) fill.style.minWidth = '0';
       track.append(fill);
 
       const value = document.createElement('div');
@@ -1531,6 +1535,32 @@ async function start() {
       { label: '室内', value: s.indoor, tone: 'muted', flag: 'indoor' },
       { label: '他党あり', value: s.otherParty, tone: 'muted', flag: 'otherParty' },
     ].map((row) => ({ ...row, onClick: () => focusList({ flags: [row.flag] }) })), ' 件');
+
+    // --- 経過の分布 ---
+    renderBars('bars-age',
+      ageDistribution(state.posters, today).map((row) => ({
+        label: row.label,
+        value: row.count,
+        // 古い区切りほど注意を引く色にする
+        tone: row.label === '2年超' || row.label === '日付なし' ? 'attention' : undefined,
+        onClick: row.minDays === null && row.label !== '半年以内'
+          ? undefined
+          : () => focusList(row.minDays === null ? {} : { minDays: row.minDays }),
+      })),
+      ' 件');
+
+    // --- 紹介者別 ---
+    const introducers = byIntroducer(state.posters);
+    renderBars('bars-introducer',
+      introducers.slice(0, 12).map((row) => ({
+        label: row.introducer,
+        value: row.count,
+        onClick: () => focusList({ introducer: row.introducer }),
+      })),
+      ' 件');
+    el('introducer-note').textContent = introducers.length > 12
+      ? '紹介者は全部で ' + introducers.length + ' 名。上位12名を表示しています。'
+      : '';
 
     // --- 地区別 ---
     renderBars('bars-district',

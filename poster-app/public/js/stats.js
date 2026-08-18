@@ -169,3 +169,78 @@ export function stalest(posters, today, limit) {
     })
     .slice(0, limit);
 }
+
+/**
+ * 経過期間の区切り。色分けの既定と同じ区切りにしてある。
+ * 画面ごとに区切りが違うと、同じデータなのに件数が食い違って見えるため。
+ */
+const AGE_BUCKETS = Object.freeze([
+  { upTo: 180, label: '半年以内' },
+  { upTo: 365, label: '1年以内' },
+  { upTo: 730, label: '2年以内' },
+  { upTo: null, label: '2年超' },
+]);
+
+/**
+ * 経過期間ごとの件数。古い方へ順に並べ、最後に日付なしを置く。
+ *
+ * 「1年以上◯件」という数だけでは貼替計画の山が読めない。
+ * どこに固まっているかが分かると、いつ何件回るかを決められる。
+ *
+ * @param {Record<string, *>[]} posters
+ * @param {string} today
+ * @returns {{label: string, count: number, minDays: number|null}[]}
+ */
+export function ageDistribution(posters, today) {
+  const rows = AGE_BUCKETS.map((bucket, index) => ({
+    label: bucket.label,
+    count: 0,
+    // その区切り以上を一覧で絞り込むための下限
+    minDays: index === 0 ? null : AGE_BUCKETS[index - 1].upTo,
+  }));
+  const unknown = { label: '日付なし', count: 0, minDays: null };
+
+  for (const poster of posters.filter((p) => !isRemoved(p))) {
+    const days = daysSince(lastRefreshedOn(poster), today);
+    if (days === null) {
+      unknown.count += 1;
+      continue;
+    }
+    for (let i = 0; i < AGE_BUCKETS.length; i += 1) {
+      const limit = AGE_BUCKETS[i].upTo;
+      if (limit === null || days <= limit) {
+        rows[i].count += 1;
+        break;
+      }
+    }
+  }
+
+  return [...rows, unknown];
+}
+
+/**
+ * 紹介者ごとの件数と枚数。多い順に並べる。
+ *
+ * 紹介が多い人ほど関係が濃い。お礼や次の依頼の優先順位に使う。
+ * 紹介者が空のものは数えない。「未設定」が最上位に来ても読み取れる意味がないため。
+ *
+ * @param {Record<string, *>[]} posters
+ * @returns {{introducer: string, count: number, sheets: number}[]}
+ */
+export function byIntroducer(posters) {
+  /** @type {Map<string, {introducer: string, count: number, sheets: number}>} */
+  const groups = new Map();
+
+  for (const poster of posters.filter((p) => !isRemoved(p))) {
+    const name = String(poster.introducer ?? '').trim();
+    if (name === '') continue;
+
+    const row = groups.get(name) ?? { introducer: name, count: 0, sheets: 0 };
+    row.count += 1;
+    row.sheets += sheetsOf(poster);
+    groups.set(name, row);
+  }
+
+  return [...groups.values()].sort((a, b) =>
+    b.count - a.count || b.sheets - a.sheets || a.introducer.localeCompare(b.introducer, 'ja'));
+}

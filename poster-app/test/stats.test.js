@@ -150,3 +150,63 @@ test('撤去済は古い順に出さない（対応する必要がないため�
   const rows = stalest(list, TODAY, 10);
   assert.deepEqual(rows.map((r) => r.poster.no), ['B']);
 });
+
+// ---------------------------------------------------------------- 経過の分布
+
+test('経過期間の分布を数える', async () => {
+  const { ageDistribution } = await import('../public/js/stats.js');
+  const list = [
+    p({ lastReplacedOn: '2026-08-01' }), // 17日
+    p({ lastReplacedOn: '2026-01-01' }), // 約7か月
+    p({ lastReplacedOn: '2024-01-01' }), // 2年半
+    p({}),                               // 日付なし
+  ];
+  const rows = ageDistribution(list, TODAY);
+
+  const find = (label) => rows.find((r) => r.label === label);
+  assert.equal(find('半年以内').count, 1);
+  assert.equal(find('1年以内').count, 1);
+  assert.equal(find('2年超').count, 1);
+  assert.equal(find('日付なし').count, 1);
+});
+
+test('分布の区切りは古い方へ順に並ぶ', async () => {
+  const { ageDistribution } = await import('../public/js/stats.js');
+  const rows = ageDistribution([], TODAY);
+  assert.deepEqual(
+    rows.map((r) => r.label),
+    ['半年以内', '1年以内', '2年以内', '2年超', '日付なし'],
+  );
+});
+
+test('分布でも撤去済は数えない', async () => {
+  const { ageDistribution } = await import('../public/js/stats.js');
+  const rows = ageDistribution([p({ lastReplacedOn: '2026-08-01', status: '撤去済' })], TODAY);
+  assert.equal(rows.reduce((sum, r) => sum + r.count, 0), 0);
+});
+
+// ---------------------------------------------------------------- 紹介者別
+
+test('紹介者ごとに件数と枚数を数え、多い順に並べる', async () => {
+  const { byIntroducer } = await import('../public/js/stats.js');
+  const list = [
+    p({ introducer: '田中', size3L: 2 }),
+    p({ introducer: '田中', size2S: 1 }),
+    p({ introducer: '佐藤', size3S: 3 }),
+  ];
+  const rows = byIntroducer(list);
+  assert.deepEqual(rows[0], { introducer: '田中', count: 2, sheets: 3 });
+  assert.deepEqual(rows[1], { introducer: '佐藤', count: 1, sheets: 3 });
+});
+
+test('紹介者が空のものは集計に入れない（「未設定」が上位に来ても意味がないため）', async () => {
+  const { byIntroducer } = await import('../public/js/stats.js');
+  const rows = byIntroducer([p({ introducer: '' }), p({ introducer: '田中' })]);
+  assert.deepEqual(rows.map((r) => r.introducer), ['田中']);
+});
+
+test('紹介者別でも撤去済は数えない', async () => {
+  const { byIntroducer } = await import('../public/js/stats.js');
+  const rows = byIntroducer([p({ introducer: '田中', status: '撤去済' })]);
+  assert.equal(rows.length, 0);
+});

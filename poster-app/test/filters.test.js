@@ -143,3 +143,19 @@ test('数字でない番号は無視する（落ちない）', () => {
 test('数字が1つも無ければ 001 を返す', () => {
   assert.equal(nextPosterNo([p({ no: 'あ' })]), '001');
 });
+
+test('紹介者で正確に絞り込める', () => {
+  // 文字の検索だと所有者が同姓の行まで拾ってしまう。紹介者だけを見る
+  const list = [
+    p({ no: '1', introducer: '田中', owner: '佐藤' }),
+    p({ no: '2', introducer: '佐藤', owner: '田中' }),
+  ];
+  const found = applyFilters(list, columns, { ...emptyFilters(), introducer: '田中' }, TODAY);
+  assert.deepEqual(found.map((x) => x.no), ['1']);
+});
+
+test('紹介者の絞り込みも説明に出る', () => {
+  const text = describeFilters({ ...emptyFilters(), introducer: '田中' });
+  assert.ok(text.includes('田中'));
+  assert.ok(text.includes('紹介者'));
+});
