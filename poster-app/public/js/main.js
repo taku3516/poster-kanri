@@ -25,6 +25,9 @@ import {
 
 import { createMap } from './map.js';
 import { summarize, byDistrict, stalest, lastRefreshedOn } from './stats.js';
+import {
+  PALETTE, modeForColumn, defaultRuleFor, REFRESHED_FIELD, bucketOf, buildLegend,
+} from './color-rules.js';
 import { geocodeAddress, reverseGeocode } from './geocode.js';
 
 /** @param {string} id @returns {HTMLElement} */
@@ -78,6 +81,7 @@ const state = {
   sortKey: 'no', sortDir: 'asc', search: '',
   editingId: null, draft: null,
   map: null,
+  editingRule: null,
 };
 
 /** @returns {any} */
@@ -172,6 +176,7 @@ async function start() {
     renderCandidate();
     renderColumns();
     renderVisibility();
+    renderRuleSelect();
     watchCurrent();
   }
 
@@ -526,7 +531,8 @@ async function start() {
     const candidate = current();
     if (candidate === undefined) return;
 
-    const shown = state.map.setPosters(state.posters, candidate.columns);
+    const shown = state.map.setPosters(state.posters, candidate.columns, colorForFactory());
+    renderLegend();
     const pending = state.posters.filter(needsGeocoding).length;
     const hidden = state.posters.filter((p) => p.showOnMap === false).length;
 
@@ -661,6 +667,316 @@ async function start() {
     if (on) el('map-status').textContent = '地図を押すと、その場所に新しい掲示場所を作ります。';
   });
 
+
+
+  // ================================================================ 色分け
+
+  /**
+   * 色分けに使える軸の一覧。
+   * 「最後に手を入れた日」は貼替日と掲示日を組み合わせた特別な軸。
+   * @returns {import('./schema.js').Column[]}
+   */
+  function colorFields() {
+    const candidate = current();
+    if (candidate === undefined) return [];
+
+    const refreshed = {
+      key: REFRESHED_FIELD,
+      label: '最後に手を入れた日（貼替日／無ければ掲示日）',
+      type: 'date',
+      system: true,
+      group: '日付',
+    };
+
+    // 色分けの軸にしても意味の薄い列は外す
+    const skip = new Set(['lat', 'lng', 'note', 'contactAddress', 'email', 'phone', 'mobile']);
+    return [refreshed, ...candidate.columns.filter((c) => !skip.has(c.key))];
+  }
+
+  /** いま選ばれている色分けルール @returns {object | null} */
+  function activeRule() {
+    const candidate = current();
+    if (candidate === undefined) return null;
+    return (candidate.colorRules ?? []).find((r) => r.id === candidate.activeRuleId) ?? null;
+  }
+
+  /** 色分けの選択欄を描く @returns {void} */
+  function renderRuleSelect() {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    const select = /** @type {HTMLSelectElement} */ (el('color-rule-select'));
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'なし';
+    none.selected = !candidate.activeRuleId;
+
+    select.replaceChildren(none, ...(candidate.colorRules ?? []).map((rule) => {
+      const option = document.createElement('option');
+      option.value = rule.id;
+      option.textContent = rule.name;
+      option.selected = rule.id === candidate.activeRuleId;
+      return option;
+    }));
+  }
+
+  /** 凡例を描く @returns {void} */
+  function renderLegend() {
+    const rule = activeRule();
+    const container = el('map-legend');
+
+    if (rule === null) {
+      container.replaceChildren();
+      return;
+    }
+
+    const legend = buildLegend(rule, state.posters, todayText());
+
+    container.replaceChildren(...legend.map((row) => {
+      const item = document.createElement('span');
+      item.className = 'legend__item';
+
+      const swatch = document.createElement('span');
+      swatch.className = 'legend__swatch';
+      swatch.style.background = PALETTE[row.color]?.hex ?? PALETTE.gray.hex;
+
+      const label = document.createElement('span');
+      label.textContent = row.label;
+
+      const count = document.createElement('span');
+      count.className = 'legend__count';
+      count.textContent = row.count + '件';
+
+      item.append(swatch, label, count);
+      return item;
+    }));
+  }
+
+  /**
+   * ピンの色を決める関数を返す。色分けしていなければ null。
+   * @returns {((poster: Record<string, *>) => {label: string, hex: string}) | null}
+   */
+  function colorForFactory() {
+    const rule = activeRule();
+    if (rule === null) return null;
+
+    const today = todayText();
+    // カテゴリのときは凡例で決めた割り当てに従う。毎回作り直さない
+    const legend = rule.mode === 'category' ? buildLegend(rule, state.posters, today) : null;
+
+    return (poster) => {
+      const bucket = bucketOf(rule, poster, today, legend);
+      return { label: bucket.label, hex: PALETTE[bucket.color]?.hex ?? PALETTE.gray.hex };
+    };
+  }
+
+  el('color-rule-select').addEventListener('change', async (event) => {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    const id = /** @type {HTMLSelectElement} */ (event.target).value;
+    candidate.activeRuleId = id;
+    renderMap();
+
+    try {
+      await db.saveColorRules(state.uid, candidate.id, candidate.colorRules ?? [], id);
+    } catch (error) {
+      showError('map-error', 'map-error-text', toMessage(error));
+    }
+  });
+
+  // ---------------------------------------------------------------- 設定画面
+
+  /** 区切りの編集欄を描く @returns {void} */
+  function renderBucketEditor() {
+    const rule = state.editingRule;
+    const area = el('color-buckets-area');
+    if (rule === null) return;
+
+    if (rule.mode === 'category') {
+      area.hidden = true;
+      el('color-mode-note').textContent =
+        '値ごとに自動で色を割り当てます（多い順に6色まで。残りは「その他」）。';
+      return;
+    }
+
+    area.hidden = false;
+
+    if (rule.mode === 'days') {
+      el('color-mode-note').textContent = '経過した日数で色を分けます。';
+      el('color-buckets-note').textContent =
+        '「何日まで」を変えると、要対応とみなす基準を調整できます。最後の区切りは上限なしです。';
+    } else if (rule.mode === 'number') {
+      el('color-mode-note').textContent = '数値の大きさで色を分けます。';
+      el('color-buckets-note').textContent = '「いくつまで」を変えられます。最後の区切りは上限なしです。';
+    } else {
+      el('color-mode-note').textContent = 'あり・なしの2色で分けます。';
+      el('color-buckets-note').textContent = 'それぞれの色を選べます。';
+    }
+
+    const head = document.createElement('div');
+    head.className = 'bucket__head';
+    head.append(
+      Object.assign(document.createElement('span'), { textContent: '区切りの名前' }),
+      Object.assign(document.createElement('span'), {
+        textContent: rule.mode === 'days' ? '何日まで' : rule.mode === 'number' ? 'いくつまで' : '',
+      }),
+      Object.assign(document.createElement('span'), { textContent: '色' }),
+    );
+
+    const rows = rule.buckets.map((bucket, index) => {
+      const row = document.createElement('div');
+      row.className = 'bucket';
+
+      const label = document.createElement('input');
+      label.className = 'input';
+      label.type = 'text';
+      label.value = bucket.label;
+      label.addEventListener('input', () => { bucket.label = label.value; });
+
+      let limit;
+      if (rule.mode === 'check') {
+        limit = document.createElement('span');
+      } else if (bucket.upTo === null) {
+        limit = document.createElement('span');
+        limit.className = 'bucket__label';
+        limit.textContent = 'それ以上';
+      } else {
+        limit = document.createElement('input');
+        limit.className = 'input';
+        limit.type = 'number';
+        limit.min = '0';
+        limit.value = String(bucket.upTo);
+        limit.addEventListener('input', () => {
+          bucket.upTo = Number(limit.value);
+        });
+      }
+
+      const color = document.createElement('select');
+      color.className = 'select';
+      color.replaceChildren(...Object.entries(PALETTE).map(([key, def]) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = def.label;
+        option.selected = key === bucket.color;
+        return option;
+      }));
+      color.addEventListener('change', () => { bucket.color = color.value; });
+
+      row.append(label, limit, color);
+      return row;
+    });
+
+    el('color-buckets').replaceChildren(head, ...rows);
+  }
+
+  /** 軸の選択欄を描く @returns {void} */
+  function renderFieldSelect() {
+    const select = /** @type {HTMLSelectElement} */ (el('color-field'));
+    const rule = state.editingRule;
+
+    select.replaceChildren(...colorFields().map((column) => {
+      const option = document.createElement('option');
+      option.value = column.key;
+      option.textContent = column.label;
+      option.selected = column.key === rule?.field;
+      return option;
+    }));
+  }
+
+  el('color-rule-edit').addEventListener('click', () => {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    const existing = activeRule();
+    // 何も選んでいなければ、最初の軸で新しい設定を作る
+    state.editingRule = existing === null
+      ? defaultRuleFor(colorFields()[0])
+      : JSON.parse(JSON.stringify(existing));
+
+    /** @type {HTMLButtonElement} */ (el('color-delete')).hidden = existing === null;
+    /** @type {HTMLInputElement} */ (el('color-name')).value = state.editingRule.name;
+    showError('color-error', 'color-error-text', '');
+
+    renderFieldSelect();
+    renderBucketEditor();
+    /** @type {HTMLDialogElement} */ (el('color-dialog')).showModal();
+  });
+
+  el('color-field').addEventListener('change', (event) => {
+    const key = /** @type {HTMLSelectElement} */ (event.target).value;
+    const column = colorFields().find((c) => c.key === key);
+    if (column === undefined) return;
+
+    // 軸を変えたら、その型に合う既定の区切りを作り直す
+    const previousId = state.editingRule?.id;
+    state.editingRule = { ...defaultRuleFor(column), id: previousId ?? defaultRuleFor(column).id };
+    /** @type {HTMLInputElement} */ (el('color-name')).value = state.editingRule.name;
+    renderBucketEditor();
+  });
+
+  el('color-cancel').addEventListener('click', () => {
+    /** @type {HTMLDialogElement} */ (el('color-dialog')).close();
+  });
+
+  el('color-save').addEventListener('click', async () => {
+    const candidate = current();
+    const rule = state.editingRule;
+    if (candidate === undefined || rule === null) return;
+
+    try {
+      showError('color-error', 'color-error-text', '');
+
+      const name = /** @type {HTMLInputElement} */ (el('color-name')).value.trim();
+      if (name === '') throw new Error('この設定の名前を入力してください');
+      rule.name = name;
+
+      // しきい値が小さい順になっていないと、色が意図と違う区切りに入る
+      if (rule.mode === 'days' || rule.mode === 'number') {
+        const limits = rule.buckets.map((b) => b.upTo).filter((v) => v !== null);
+        for (let i = 1; i < limits.length; i += 1) {
+          if (limits[i - 1] >= limits[i]) {
+            throw new Error('区切りの数値は小さい順に並べてください');
+          }
+        }
+      }
+
+      const rules = (candidate.colorRules ?? []).slice();
+      const index = rules.findIndex((r) => r.id === rule.id);
+      if (index === -1) rules.push(rule); else rules[index] = rule;
+
+      candidate.colorRules = rules;
+      candidate.activeRuleId = rule.id;
+
+      await db.saveColorRules(state.uid, candidate.id, rules, rule.id);
+
+      /** @type {HTMLDialogElement} */ (el('color-dialog')).close();
+      renderRuleSelect();
+      renderMap();
+    } catch (error) {
+      showError('color-error', 'color-error-text', toMessage(error));
+    }
+  });
+
+  el('color-delete').addEventListener('click', async () => {
+    const candidate = current();
+    const rule = state.editingRule;
+    if (candidate === undefined || rule === null) return;
+    if (!window.confirm('色分けの設定「' + rule.name + '」を削除します。よろしいですか？')) return;
+
+    try {
+      const rules = (candidate.colorRules ?? []).filter((r) => r.id !== rule.id);
+      candidate.colorRules = rules;
+      candidate.activeRuleId = '';
+      await db.saveColorRules(state.uid, candidate.id, rules, '');
+
+      /** @type {HTMLDialogElement} */ (el('color-dialog')).close();
+      renderRuleSelect();
+      renderMap();
+    } catch (error) {
+      showError('color-error', 'color-error-text', toMessage(error));
+    }
+  });
 
   // ================================================================ ダッシュボード
 
@@ -990,6 +1306,7 @@ async function start() {
     renderCandidate();
     renderColumns();
     renderVisibility();
+    renderRuleSelect();
     watchCurrent();
   });
 

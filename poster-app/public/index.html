@@ -154,9 +154,14 @@
             <input type="checkbox" id="map-add-mode">
             地図を押してピンを追加
           </label>
+          <span class="toolbar__sep"></span>
+          <label class="map-toggle" for="color-rule-select">色分け</label>
+          <select class="select" id="color-rule-select"></select>
+          <button type="button" class="button button--quiet" id="color-rule-edit">設定</button>
         </div>
         <p class="text-sub" id="map-status"></p>
         <div id="map" class="map"></div>
+        <div class="legend" id="map-legend"></div>
         <p class="text-sub">
           ピンをドラッグすると位置を直せます。直した位置は「座標確定」が付き、
           住所からの再計算で戻りません。
@@ -311,6 +316,41 @@
       <span class="dialog__spacer"></span>
       <button type="button" class="button button--quiet" id="edit-cancel">キャンセル</button>
       <button type="button" class="button button--primary" id="edit-save">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dialog" id="color-dialog">
+  <form method="dialog" class="dialog__form">
+    <h2 class="dialog__title">ピンの色分けを設定</h2>
+    <div class="dialog__body">
+      <div class="field">
+        <label class="field__label" for="color-field">色を分ける軸</label>
+        <select class="select" id="color-field"></select>
+        <p class="text-sub" id="color-mode-note"></p>
+      </div>
+
+      <div class="field">
+        <label class="field__label" for="color-name">この設定の名前</label>
+        <input class="input" type="text" id="color-name" autocomplete="off">
+      </div>
+
+      <div id="color-buckets-area">
+        <h3>区切り</h3>
+        <p class="text-sub" id="color-buckets-note"></p>
+        <div id="color-buckets"></div>
+      </div>
+
+      <div class="notice notice--error" id="color-error" hidden>
+        <span class="notice__label">エラー</span><span id="color-error-text"></span>
+      </div>
+    </div>
+
+    <div class="dialog__actions">
+      <button type="button" class="button button--danger" id="color-delete">この設定を削除</button>
+      <span class="dialog__spacer"></span>
+      <button type="button" class="button button--quiet" id="color-cancel">キャンセル</button>
+      <button type="button" class="button button--primary" id="color-save">保存</button>
     </div>
   </form>
 </dialog>

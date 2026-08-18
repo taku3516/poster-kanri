@@ -8,6 +8,23 @@
 
 import { posterValue } from './table.js';
 
+/**
+ * 色付きのピンの絵柄を作る。
+ *
+ * 色は決められた配色から来るが、念のため書式を確かめてから埋め込む。
+ * 外から来た文字列をそのまま絵柄に入れないため。
+ *
+ * @param {string} hex '#rrggbb'
+ * @returns {string} SVG
+ */
+function pinSvg(hex) {
+  const color = /^#[0-9a-f]{6}$/i.test(hex) ? hex : '#626264';
+  return '<svg width="26" height="36" viewBox="0 0 26 36" xmlns="http://www.w3.org/2000/svg">'
+    + '<path d="M13 0C5.8 0 0 5.8 0 13c0 9.8 13 23 13 23s13-13.2 13-23C26 5.8 20.2 0 13 0z"'
+    + ' fill="' + color + '" stroke="#ffffff" stroke-width="2"/>'
+    + '<circle cx="13" cy="13" r="4.8" fill="#ffffff"/></svg>';
+}
+
 /** 品川区がおおよそ収まる範囲。起動時はここを映す */
 const SHINAGAWA_BOUNDS = [[35.5800, 139.6880], [35.6450, 139.7900]];
 
@@ -38,6 +55,24 @@ export function createMap(elementId, handlers) {
   const cluster = L.markerClusterGroup({
     showCoverageOnHover: false,
     maxClusterRadius: 45,
+    // 既定のクラスタは件数に応じて緑・黄・赤に変わる。
+    // ピンの色分けと意味が衝突し、「緑＝最近貼り替えた」と誤読されるため、
+    // 件数だけを表す中立の灰色にする
+    iconCreateFunction(group) {
+      const count = group.getChildCount();
+      const size = count < 10 ? 34 : count < 50 ? 40 : 46;
+      const node = document.createElement('div');
+      node.className = 'cluster';
+      node.style.width = size + 'px';
+      node.style.height = size + 'px';
+      node.style.lineHeight = size + 'px';
+      node.textContent = String(count);
+      return L.divIcon({
+        html: node.outerHTML,
+        className: 'cluster-wrap',
+        iconSize: [size, size],
+      });
+    },
   });
   map.addLayer(cluster);
 
@@ -60,9 +95,11 @@ export function createMap(elementId, handlers) {
      * 表示するピンを差し替える。
      * @param {Record<string, *>[]} posters
      * @param {import('./schema.js').Column[]} columns
+     * @param {((poster: Record<string, *>) => {label: string, hex: string}) | null} colorFor
+     *        色分けしないときは null
      * @returns {number} 表示したピンの数
      */
-    setPosters(posters, columns) {
+    setPosters(posters, columns, colorFor = null) {
       cluster.clearLayers();
 
       const byKey = new Map(columns.map((c) => [c.key, c]));
@@ -77,7 +114,18 @@ export function createMap(elementId, handlers) {
         if (poster.showOnMap === false) continue;
         if (typeof poster.lat !== 'number' || typeof poster.lng !== 'number') continue;
 
-        const marker = L.marker([poster.lat, poster.lng], { draggable: true });
+        // 色分けが指定されていれば色付きの絵柄を使う
+        const paint = colorFor === null ? null : colorFor(poster);
+        const icon = paint === null ? undefined : L.divIcon({
+          className: 'pin',
+          html: pinSvg(paint.hex),
+          iconSize: [26, 36],
+          iconAnchor: [13, 36],
+          popupAnchor: [0, -32],
+        });
+
+        const marker = L.marker([poster.lat, poster.lng],
+          icon === undefined ? { draggable: true } : { draggable: true, icon });
 
         const title = [
           noCol === undefined ? '' : posterValue(poster, noCol),
@@ -93,13 +141,21 @@ export function createMap(elementId, handlers) {
         strong.textContent = title === '' ? '(名称未設定)' : title;
         const sub = document.createElement('div');
         sub.textContent = String(address);
+
+        // どの区切りで色が付いているかを吹き出しにも出す（色だけに頼らない）
+        const legend = document.createElement('div');
+        if (paint !== null) {
+          legend.style.marginTop = '4px';
+          legend.style.color = '#626264';
+          legend.textContent = '色分け: ' + paint.label;
+        }
         const open = document.createElement('button');
         open.type = 'button';
         open.className = 'button button--quiet';
         open.style.marginTop = '8px';
         open.textContent = 'この掲示場所を開く';
         open.addEventListener('click', () => handlers.onMarkerClick(poster.id));
-        box.append(strong, sub, open);
+        box.append(strong, sub, legend, open);
 
         marker.bindPopup(box);
 
@@ -181,10 +237,17 @@ export function createMap(elementId, handlers) {
 
     /**
      * 隠れていた状態から表示したときは、大きさを計算し直す必要がある。
+     *
+     * 一度だけでは間に合わないことがある。表示に切り替えた直後は
+     * まだ要素の大きさが確定しておらず、タイルが片側に寄って
+     * 白い隙間が残る。少し遅らせてもう一度測り直す。
+     * requestAnimationFrame は裏のタブで発火しないため使わない。
+     *
      * @returns {void}
      */
     refresh() {
       map.invalidateSize();
+      setTimeout(() => map.invalidateSize(), 120);
     },
   };
 }

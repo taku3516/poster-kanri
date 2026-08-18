@@ -738,3 +738,88 @@ p:last-child { margin-bottom: 0; }
   .kpi__value { font-size: 26px; }
   .bars { grid-template-columns: minmax(4.5em, auto) 1fr minmax(3.5em, auto); font-size: 13px; }
 }
+
+/* ------------------------------------------------------------------ */
+/* 色分けと凡例                                                        */
+/* ------------------------------------------------------------------ */
+
+.toolbar__sep {
+  width: 1px;
+  height: 24px;
+  background: var(--gray-300);
+  margin: 0 var(--space-2);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-3);
+  font-size: 13px;
+}
+
+.legend:empty { display: none; }
+
+.legend__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 色の見本。丸だけでなく名前も必ず添える（色だけで伝えない） */
+.legend__swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  flex: none;
+}
+
+.legend__count {
+  color: var(--gray-600);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 色分けの区切りの編集 */
+.bucket {
+  display: grid;
+  grid-template-columns: 1fr 6em 7em;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.bucket__label { font-size: 14px; }
+.bucket .input, .bucket .select { width: 100%; }
+
+.bucket__head {
+  display: grid;
+  grid-template-columns: 1fr 6em 7em;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  font-size: 12px;
+  color: var(--gray-600);
+}
+
+/* Leaflet の既定の枠を消す（自前のSVGを入れているため） */
+.pin { background: none; border: none; }
+
+@media (max-width: 760px) {
+  .toolbar__sep { display: none; }
+  .bucket, .bucket__head { grid-template-columns: 1fr 5em 6em; }
+}
+
+/* クラスタは「件数のまとまり」だけを表す。ピンの色分けと意味を混ぜない */
+.cluster-wrap { background: none; border: none; }
+
+.cluster {
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--white);
+  background: var(--gray-600);
+  border: 2px solid var(--white);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  font-variant-numeric: tabular-nums;
+}

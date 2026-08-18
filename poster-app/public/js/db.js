@@ -82,6 +82,8 @@ export async function listCandidates(uid, options = {}) {
     name: d.data().name ?? '(名称未設定)',
     archived: d.data().archived === true,
     columns: d.data().columns ?? defaultColumns(),
+    colorRules: d.data().colorRules ?? [],
+    activeRuleId: d.data().activeRuleId ?? '',
   }));
 
   return options.includeArchived === true ? all : all.filter((c) => !c.archived);
@@ -327,4 +329,21 @@ export async function createPostersBulk(uid, candidateId, posters) {
   }
 
   return posters.length;
+}
+
+/**
+ * 色分けルールと、いま選んでいるルールを保存する。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {object[]} colorRules
+ * @param {string} activeRuleId 選んでいないときは空文字
+ * @returns {Promise<void>}
+ */
+export async function saveColorRules(uid, candidateId, colorRules, activeRuleId) {
+  await updateDoc(doc(candidatesRef(uid), candidateId), {
+    colorRules,
+    activeRuleId,
+    updatedAt: serverTimestamp(),
+  });
 }
