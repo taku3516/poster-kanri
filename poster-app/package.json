@@ -5,6 +5,7 @@
   "type": "module",
   "description": "政治家ポスター掲示場所の管理アプリ。ビルド不要の静的サイト（依存パッケージなし）",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "start": "python3 tools/serve.py"
   }
 }

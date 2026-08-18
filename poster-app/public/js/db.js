@@ -224,15 +224,24 @@ export async function countPosters(uid, candidateId) {
  *
  * @param {string} uid
  * @param {string} candidateId
- * @param {(posters: Record<string, *>[]) => void} onChange
+ * @param {(posters: Record<string, *>[], sync: {fromCache: boolean, pending: boolean}) => void} onChange
  * @param {(error: Error) => void} onError
  * @returns {() => void} 見張りを止める関数
  */
 export function watchPosters(uid, candidateId, onChange, onError) {
   return onSnapshot(
     postersRef(uid, candidateId),
+    // 同期の状態だけが変わったときも知らせてもらう。
+    // 「まだ送れていない変更がある」ことを画面に出すために要る
+    { includeMetadataChanges: true },
     (snapshot) => {
-      onChange(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      onChange(
+        snapshot.docs.map((d) => ({ id: d.id, ...d.data() })),
+        {
+          fromCache: snapshot.metadata.fromCache,
+          pending: snapshot.metadata.hasPendingWrites,
+        },
+      );
     },
     onError,
   );

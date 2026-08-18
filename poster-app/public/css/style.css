@@ -932,3 +932,38 @@ button.kpi {
 /* 選択中の行を分かるようにする */
 .table tbody tr.is-selected td { background: #eaf1f9; }
 .table tbody tr.is-selected td:first-child { background: #eaf1f9; }
+
+/* ------------------------------------------------------------------ */
+/* 通信の状態                                                          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * 圏外でも編集はできる（手元に控えて後で送る）。
+ * ただしそれが分からないと「保存できたのか」が不安になり、
+ * 二重入力の原因になるため、状態を必ず見せる。
+ */
+.syncbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-6);
+  font-size: 14px;
+  color: var(--gray-900);
+  background: #fdf3e7;
+  border-bottom: 1px solid var(--orange);
+}
+
+.syncbar[hidden] { display: none; }
+
+.syncbar__label { font-weight: 700; color: var(--orange); }
+
+.syncbar--ok {
+  background: #eef6f1;
+  border-bottom-color: var(--green);
+}
+
+.syncbar--ok .syncbar__label { color: var(--green); }
+
+@media (max-width: 760px) {
+  .syncbar { padding: var(--space-2) var(--space-4); }
+}

@@ -33,6 +33,7 @@ import {
   summarize, byDistrict, stalest, lastRefreshedOn, ageDistribution, byIntroducer,
 } from './stats.js';
 import { coverageByTown, formatPer10k, BASIS } from './coverage.js';
+import { hasChanges } from './changes.js';
 import { TOWN_POPULATION, POPULATION_AS_OF } from './population.js';
 import {
   PALETTE, modeForColumn, defaultRuleFor, REFRESHED_FIELD, bucketOf, buildLegend,
@@ -95,6 +96,8 @@ const state = {
   here: null,
   selected: new Set(),
   coverageBasis: BASIS.voters,
+  editingOriginal: null,
+  sync: { fromCache: false, pending: false },
 };
 
 /** @returns {any} */
@@ -241,8 +244,10 @@ async function start() {
     state.unwatch = db.watchPosters(
       state.uid,
       candidate.id,
-      (posters) => {
+      (posters, sync) => {
         state.posters = posters;
+        state.sync = sync;
+        renderSyncBar();
         showError('list-error', 'list-error-text', '');
         renderFilterControls();
         renderTable();
@@ -421,6 +426,51 @@ async function start() {
   });
 
 
+
+
+  /**
+   * 通信と同期の状態を出す。
+   *
+   * 圏外でも編集はできる（手元に控えて後で送る）。ただしそれが分からないと
+   * 「保存できたのか」が不安になり、二重入力の原因になる。
+   *
+   * @returns {void}
+   */
+  function renderSyncBar() {
+    const bar = el('sync-bar');
+    const offline = navigator.onLine === false;
+
+    if (offline) {
+      bar.hidden = false;
+      bar.classList.remove('syncbar--ok');
+      el('sync-label').textContent = 'オフライン';
+      el('sync-text').textContent =
+        '編集はできます。この端末に控えて、電波が戻ったときにまとめて送ります。';
+      return;
+    }
+
+    if (state.sync.pending) {
+      bar.hidden = false;
+      bar.classList.remove('syncbar--ok');
+      el('sync-label').textContent = '送信中';
+      el('sync-text').textContent = 'まだ送れていない変更があります。';
+      return;
+    }
+
+    // 復帰した直後だけ短く知らせる。常時出していると読まなくなる
+    if (bar.hidden === false && bar.classList.contains('syncbar--ok') === false) {
+      bar.classList.add('syncbar--ok');
+      el('sync-label').textContent = '同期しました';
+      el('sync-text').textContent = 'この端末の変更はすべて反映されています。';
+      setTimeout(() => { bar.hidden = true; }, 4000);
+      return;
+    }
+
+    bar.hidden = true;
+  }
+
+  window.addEventListener('online', renderSyncBar);
+  window.addEventListener('offline', renderSyncBar);
 
   // ================================================================ 一括操作・現在地
 
@@ -771,6 +821,8 @@ async function start() {
     if (candidate === undefined) return;
 
     state.editingId = poster === null ? null : poster.id;
+    // 閉じるときに変更の有無を見るため、開いた時点の内容を控える
+    state.editingOriginal = poster === null ? null : { ...poster, custom: { ...(poster.custom ?? {}) } };
     state.draft = poster === null
       // 新規は番号を自動で入れる。手で入れ直すこともできる
       ? { ...createEmptyPoster(candidate.columns), no: nextPosterNo(state.posters), ...(prefill ?? {}) }
@@ -806,8 +858,27 @@ async function start() {
   }
 
   el('poster-add').addEventListener('click', () => openEditor(null));
+  /**
+   * 編集を閉じてよいか。変更があるときだけ確認する。
+   * 何も触っていないのに毎回聞かれると、読まずに押すようになるため。
+   * @returns {boolean}
+   */
+  function canCloseEditor() {
+    const candidate = current();
+    if (candidate === undefined || state.draft === null) return true;
+    if (!hasChanges(state.editingOriginal, state.draft, candidate.columns)) return true;
+    return window.confirm('入力した内容が保存されていません。\n破棄して閉じてよろしいですか？');
+  }
+
   el('edit-cancel').addEventListener('click', () => {
+    if (!canCloseEditor()) return;
     /** @type {HTMLDialogElement} */ (el('edit-dialog')).close();
+  });
+
+  // Esc や画面外の操作で閉じようとしたときも同じ確認を通す
+  el('edit-dialog').addEventListener('cancel', (event) => {
+    if (canCloseEditor()) return;
+    event.preventDefault();
   });
 
   el('edit-save').addEventListener('click', async () => {
@@ -821,6 +892,8 @@ async function start() {
       } else {
         await db.savePoster(state.uid, candidate.id, state.editingId, state.draft);
       }
+      state.editingOriginal = null;
+      state.draft = null;
       /** @type {HTMLDialogElement} */ (el('edit-dialog')).close();
     } catch (error) {
       showError('edit-error', 'edit-error-text', toMessage(error));
@@ -836,6 +909,8 @@ async function start() {
 
     try {
       await db.deletePoster(state.uid, candidate.id, state.editingId);
+      state.editingOriginal = null;
+      state.draft = null;
       /** @type {HTMLDialogElement} */ (el('edit-dialog')).close();
     } catch (error) {
       showError('edit-error', 'edit-error-text', toMessage(error));
