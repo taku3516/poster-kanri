@@ -111,6 +111,7 @@
     <nav class="tabs" role="tablist">
       <button type="button" class="tab" id="tab-list" role="tab" aria-selected="true">一覧</button>
       <button type="button" class="tab" id="tab-map" role="tab" aria-selected="false">地図</button>
+      <button type="button" class="tab" id="tab-dash" role="tab" aria-selected="false">ダッシュボード</button>
       <button type="button" class="tab" id="tab-settings" role="tab" aria-selected="false">設定</button>
     </nav>
 
@@ -166,6 +167,54 @@
       </div>
     </div>
 
+    <!-- ================= ダッシュボード ================= -->
+    <div id="panel-dash" hidden>
+
+      <div class="kpis" id="kpi-row"></div>
+
+      <div class="grid2">
+        <div class="panel">
+          <h2>ポスター種別</h2>
+          <p class="text-sub">掲示している枚数の内訳です。</p>
+          <div class="bars" id="bars-type"></div>
+        </div>
+
+        <div class="panel">
+          <h2>現場の条件</h2>
+          <p class="text-sub">作業の段取りに関わる件数です。</p>
+          <div class="bars" id="bars-condition"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>地区別の掲示状況</h2>
+        <p class="text-sub">
+          件数の多い順です。少ない地区・出てこない地区が手薄な場所です。
+        </p>
+        <div class="bars" id="bars-district"></div>
+      </div>
+
+      <div class="panel">
+        <h2>貼替から間があいている場所</h2>
+        <p class="text-sub">
+          経過の長い順に20件。日付が分からないものを最上位に出しています。
+          行を押すと編集できます。
+        </p>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>番号</th><th>掲示場所</th><th>地区</th>
+                <th>最後に手を入れた日</th><th>経過</th><th>所有者</th>
+              </tr>
+            </thead>
+            <tbody id="stale-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
     <!-- ================= 設定 ================= -->
     <div id="panel-settings" hidden>
 
@@ -192,6 +241,15 @@
           <input class="input" type="text" id="rename-candidate-name" autocomplete="off">
           <button type="button" class="button button--quiet" id="rename-candidate-save">変更</button>
         </div>
+
+        <h3>デモ用の台帳を作る</h3>
+        <p class="text-sub">
+          品川区内の実在する住所を使った見本データ44件を入れた台帳を作ります。
+          連絡先はすべて架空です。実データを入れる前の練習に使えます。
+        </p>
+        <button type="button" class="button button--quiet" id="create-demo">
+          デモ台帳を作る
+        </button>
 
         <h3>表示中の候補者を保管する</h3>
         <p class="text-sub">一覧から外しますが、データは消えません。あとで戻せます。</p>

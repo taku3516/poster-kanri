@@ -24,6 +24,7 @@ import {
 } from './table.js';
 
 import { createMap } from './map.js';
+import { summarize, byDistrict, stalest, lastRefreshedOn } from './stats.js';
 import { geocodeAddress, reverseGeocode } from './geocode.js';
 
 /** @param {string} id @returns {HTMLElement} */
@@ -121,9 +122,9 @@ async function start() {
 
   // ================================================================ タブ
 
-  /** @param {'list'|'map'|'settings'} name @returns {void} */
+  /** @param {'list'|'map'|'dash'|'settings'} name @returns {void} */
   function showTab(name) {
-    for (const key of ['list', 'map', 'settings']) {
+    for (const key of ['list', 'map', 'dash', 'settings']) {
       el('panel-' + key).hidden = key !== name;
       el('tab-' + key).setAttribute('aria-selected', String(key === name));
     }
@@ -134,10 +135,13 @@ async function start() {
       state.map?.refresh();
       renderMap();
     }
+
+    if (name === 'dash') renderDashboard();
   }
 
   el('tab-list').addEventListener('click', () => showTab('list'));
   el('tab-map').addEventListener('click', () => showTab('map'));
+  el('tab-dash').addEventListener('click', () => showTab('dash'));
   el('tab-settings').addEventListener('click', () => showTab('settings'));
 
   // ================================================================ 候補者
@@ -224,6 +228,7 @@ async function start() {
         showError('list-error', 'list-error-text', '');
         renderTable();
         renderMap();
+        renderDashboard();
         el('fact-posters').textContent = posters.length + ' 件';
       },
       (error) => {
@@ -654,6 +659,202 @@ async function start() {
     const on = /** @type {HTMLInputElement} */ (event.target).checked;
     state.map?.setAddMode(on);
     if (on) el('map-status').textContent = '地図を押すと、その場所に新しい掲示場所を作ります。';
+  });
+
+
+  // ================================================================ ダッシュボード
+
+  /**
+   * 今日の日付を 'YYYY-MM-DD' で返す。端末の暦で数える。
+   * @returns {string}
+   */
+  function todayText() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+  }
+
+  /**
+   * 数値の見出し（KPI）を1枚作る。
+   * @param {{label: string, value: number|string, unit?: string, note?: string, tone?: string}} spec
+   * @returns {HTMLElement}
+   */
+  function buildKpi(spec) {
+    const box = document.createElement('div');
+    box.className = 'kpi' + (spec.tone ? ' kpi--' + spec.tone : '');
+
+    const label = document.createElement('div');
+    label.className = 'kpi__label';
+    label.textContent = spec.label;
+
+    const value = document.createElement('div');
+    value.className = 'kpi__value';
+    value.textContent = String(spec.value);
+    if (spec.unit !== undefined) {
+      const unit = document.createElement('span');
+      unit.className = 'kpi__unit';
+      unit.textContent = spec.unit;
+      value.append(unit);
+    }
+
+    box.append(label, value);
+
+    if (spec.note !== undefined && spec.note !== '') {
+      const note = document.createElement('div');
+      note.className = 'kpi__note';
+      note.textContent = spec.note;
+      box.append(note);
+    }
+    return box;
+  }
+
+  /**
+   * 横棒グラフを描く。最大値を基準に幅の比率で表す。
+   * @param {string} containerId
+   * @param {{label: string, value: number, tone?: string}[]} rows
+   * @param {string} unit
+   * @returns {void}
+   */
+  function renderBars(containerId, rows, unit) {
+    const container = el(containerId);
+    const max = rows.reduce((m, r) => Math.max(m, r.value), 0);
+
+    if (rows.length === 0 || max === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'text-sub';
+      empty.textContent = 'まだデータがありません。';
+      container.replaceChildren(empty);
+      return;
+    }
+
+    const nodes = [];
+    for (const row of rows) {
+      const label = document.createElement('div');
+      label.className = 'bars__label';
+      label.textContent = row.label;
+
+      const track = document.createElement('div');
+      track.className = 'bars__track';
+      const fill = document.createElement('div');
+      fill.className = 'bars__fill' + (row.tone ? ' bars__fill--' + row.tone : '');
+      fill.style.width = Math.round((row.value / max) * 100) + '%';
+      track.append(fill);
+
+      const value = document.createElement('div');
+      value.className = 'bars__value';
+      value.textContent = row.value + unit;
+
+      nodes.push(label, track, value);
+    }
+    container.replaceChildren(...nodes);
+  }
+
+  /** ダッシュボード全体を描く @returns {void} */
+  function renderDashboard() {
+    const candidate = current();
+    if (candidate === undefined) return;
+    if (el('panel-dash').hidden) return; // 見ていないときは組み立てない
+
+    const today = todayText();
+    const s = summarize(state.posters, today);
+
+    // --- 数値の見出し ---
+    el('kpi-row').replaceChildren(
+      buildKpi({ label: '掲示場所', value: s.total, unit: '件',
+                 note: s.removed > 0 ? '撤去済 ' + s.removed + ' 件を除く' : '' }),
+      buildKpi({ label: '掲示枚数', value: s.sheets, unit: '枚' }),
+      buildKpi({ label: '貼替から1年以上', value: s.overOneYear, unit: '件',
+                 tone: s.overOneYear > 0 ? 'attention' : undefined,
+                 note: '次に回る候補' }),
+      buildKpi({ label: '日付が不明', value: s.unknownDate, unit: '件',
+                 tone: s.unknownDate > 0 ? 'alert' : undefined,
+                 note: '掲示日も貼替日も未入力' }),
+      buildKpi({ label: '地図に出ていない', value: s.noCoord + s.hiddenOnMap, unit: '件',
+                 tone: s.noCoord > 0 ? 'attention' : undefined,
+                 note: '座標なし ' + s.noCoord + ' ／ 掲載を外している ' + s.hiddenOnMap }),
+    );
+
+    // --- 種別 ---
+    renderBars('bars-type', [
+      { label: '3連大', value: s.byType.size3L },
+      { label: '3連小', value: s.byType.size3S },
+      { label: '2連大', value: s.byType.size2L },
+      { label: '2連小', value: s.byType.size2S },
+    ], ' 枚');
+
+    // --- 現場の条件 ---
+    renderBars('bars-condition', [
+      { label: '要脚立', value: s.needLadder, tone: 'attention' },
+      { label: 'プラ段', value: s.plaDan, tone: 'muted' },
+      { label: '室内', value: s.indoor, tone: 'muted' },
+      { label: '他党あり', value: s.otherParty, tone: 'muted' },
+    ], ' 件');
+
+    // --- 地区別 ---
+    renderBars('bars-district',
+      byDistrict(state.posters).map((row) => ({ label: row.district, value: row.count })),
+      ' 件');
+
+    // --- 貼替が古い順 ---
+    const rows = stalest(state.posters, today, 20);
+    el('stale-body').replaceChildren(...rows.map(({ poster, days }) => {
+      const tr = document.createElement('tr');
+      tr.addEventListener('click', () => openEditor(poster));
+
+      const cells = [
+        String(poster.no ?? ''),
+        String(poster.placeName ?? ''),
+        String(poster.district ?? ''),
+        lastRefreshedOn(poster) ?? '未入力',
+      ];
+      for (const text of cells) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.append(td);
+      }
+
+      const daysCell = document.createElement('td');
+      daysCell.className = 'is-number';
+      if (days === null) {
+        daysCell.textContent = '不明';
+        daysCell.classList.add('days--unknown');
+      } else {
+        daysCell.textContent = days + ' 日';
+        if (days >= 365) daysCell.classList.add('days--long');
+      }
+      tr.append(daysCell);
+
+      const owner = document.createElement('td');
+      owner.textContent = String(poster.owner ?? '');
+      tr.append(owner);
+
+      return tr;
+    }));
+  }
+
+  // ================================================================ デモ台帳
+
+  el('create-demo').addEventListener('click', async () => {
+    const button = /** @type {HTMLButtonElement} */ (el('create-demo'));
+    if (!window.confirm(
+      '見本データ44件を入れた「デモ」台帳を作ります。\n' +
+      '既存の台帳には影響しません。よろしいですか？',
+    )) return;
+
+    button.disabled = true;
+    try {
+      showError('candidate-error', 'candidate-error-text', '');
+      const { DEMO_POSTERS } = await import('./demo-data.js');
+      const id = await db.createCandidate(state.uid, 'デモ（見本データ）');
+      await db.createPostersBulk(state.uid, id, DEMO_POSTERS);
+      state.currentId = id;
+      await reload();
+      showTab('list');
+    } catch (error) {
+      showError('candidate-error', 'candidate-error-text', toMessage(error));
+    } finally {
+      button.disabled = false;
+    }
   });
 
   // ================================================================ 列

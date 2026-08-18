@@ -25,6 +25,7 @@ import {
   getCountFromServer,
   onSnapshot,
   setDoc,
+  writeBatch,
 } from 'https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js';
 
 import { defaultColumns } from './schema.js';
@@ -296,3 +297,34 @@ export async function deletePoster(uid, candidateId, posterId) {
  * @returns {Promise<void>}
  */
 export const saveColumnVisibility = saveColumns;
+
+/**
+ * ポスターをまとめて足す。
+ *
+ * Firestore の一括書き込みは1回あたり500件までなので、
+ * それを超える分は分けて送る。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {Record<string, *>[]} posters
+ * @returns {Promise<number>} 足した件数
+ */
+export async function createPostersBulk(uid, candidateId, posters) {
+  const LIMIT = 400; // 500の上限に対して余裕を持たせる
+  const ref = postersRef(uid, candidateId);
+
+  for (let start = 0; start < posters.length; start += LIMIT) {
+    const batch = writeBatch(db);
+    for (const poster of posters.slice(start, start + LIMIT)) {
+      batch.set(doc(ref), {
+        ...poster,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      });
+    }
+    await batch.commit();
+  }
+
+  return posters.length;
+}

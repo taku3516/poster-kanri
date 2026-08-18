@@ -634,3 +634,107 @@ p:last-child { margin-bottom: 0; }
 @media (max-width: 760px) {
   .map { height: 60vh; }
 }
+
+/* ------------------------------------------------------------------ */
+/* ダッシュボード                                                       */
+/* ------------------------------------------------------------------ */
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.kpi {
+  padding: var(--space-4);
+  background: var(--white);
+  border: var(--border);
+  border-radius: var(--radius);
+  /* 数値の意味は左の罫で示す。色だけに頼らない */
+  border-left: 4px solid var(--gray-400);
+}
+
+.kpi--attention { border-left-color: var(--orange); }
+.kpi--alert { border-left-color: var(--red); }
+
+.kpi__label {
+  font-size: 13px;
+  color: var(--gray-600);
+}
+
+.kpi__value {
+  margin-top: var(--space-1);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi__unit {
+  margin-left: 2px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--gray-600);
+}
+
+.kpi__note {
+  margin-top: var(--space-1);
+  font-size: 12px;
+  color: var(--gray-600);
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+
+.grid2 > .panel { margin-top: 0; }
+
+/* 横棒グラフ。外部の部品は使わず、幅の比率だけで表す */
+.bars {
+  display: grid;
+  grid-template-columns: minmax(5em, auto) 1fr minmax(4em, auto);
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  font-size: 14px;
+}
+
+.bars__label {
+  color: var(--gray-700);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bars__track {
+  height: 14px;
+  background: var(--gray-100);
+  border-radius: 2px;
+}
+
+.bars__fill {
+  height: 100%;
+  background: var(--blue);
+  border-radius: 2px;
+  min-width: 2px;
+}
+
+.bars__fill--muted { background: var(--light-blue); }
+.bars__fill--attention { background: var(--orange); }
+
+.bars__value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-700);
+}
+
+/* 経過日数の強調。色だけでなく太字でも示す */
+.days--long { color: var(--red); font-weight: 700; }
+.days--unknown { color: var(--orange); font-weight: 700; }
+
+@media (max-width: 760px) {
+  .kpi__value { font-size: 26px; }
+  .bars { grid-template-columns: minmax(4.5em, auto) 1fr minmax(3.5em, auto); font-size: 13px; }
+}
