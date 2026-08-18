@@ -121,6 +121,7 @@
         <div class="toolbar">
           <input class="input" type="search" id="search" placeholder="すべての列から検索" autocomplete="off">
           <button type="button" class="button button--primary" id="poster-add">新規追加</button>
+          <button type="button" class="button button--quiet" id="list-locate">現在地から近い順</button>
         </div>
         <div class="toolbar toolbar--filters">
           <select class="select" id="filter-district" aria-label="地区で絞り込む"></select>
@@ -133,6 +134,18 @@
           <button type="button" class="button button--quiet" id="filter-clear" hidden>
             絞り込みを解除
           </button>
+        </div>
+
+        <div class="bulkbar" id="bulk-bar" hidden>
+          <span class="bulkbar__count" id="bulk-count"></span>
+          <button type="button" class="button button--quiet" id="bulk-today">貼替日を今日にする</button>
+          <select class="select" id="bulk-status">
+            <option value="">状態を変える…</option>
+          </select>
+          <select class="select" id="bulk-flag">
+            <option value="">条件を設定…</option>
+          </select>
+          <button type="button" class="button button--quiet" id="bulk-clear">選択を解除</button>
         </div>
 
         <p class="text-sub" id="list-count">読み込んでいます…</p>

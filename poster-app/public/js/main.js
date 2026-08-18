@@ -28,6 +28,7 @@ import {
   emptyFilters, isFiltered, applyFilters, describeFilters, nextPosterNo,
   FLAG_OPTIONS, DAYS_OPTIONS,
 } from './filters.js';
+import { distanceOf, formatDistance, sortByDistance } from './distance.js';
 import { summarize, byDistrict, stalest, lastRefreshedOn } from './stats.js';
 import {
   PALETTE, modeForColumn, defaultRuleFor, REFRESHED_FIELD, bucketOf, buildLegend,
@@ -87,6 +88,8 @@ const state = {
   map: null,
   editingRule: null,
   lastMove: null,
+  here: null,
+  selected: new Set(),
 };
 
 /** @returns {any} */
@@ -258,6 +261,13 @@ async function start() {
     if (candidate === undefined) return [];
 
     const filtered = applyFilters(state.posters, candidate.columns, state.filters, todayText());
+
+    // 現在地からの距離は列ではないので、並べ替えを別に扱う
+    if (state.sortKey === DISTANCE_KEY) {
+      const near = sortByDistance(filtered, state.here);
+      return state.sortDir === 'desc' ? near.reverse() : near;
+    }
+
     const sortColumn = candidate.columns.find((c) => c.key === state.sortKey);
     return sortColumn === undefined
       ? filtered
@@ -273,7 +283,52 @@ async function start() {
     const rows = visibleRows();
 
     // --- 見出し ---
-    el('poster-head').replaceChildren(...columns.map((column) => {
+    const headCells = [];
+
+    // 選択列。見出しの印は「いま出ている行を全部選ぶ」
+    const selectTh = document.createElement('th');
+    selectTh.className = 'is-select';
+    const selectAll = document.createElement('input');
+    selectAll.type = 'checkbox';
+    selectAll.setAttribute('aria-label', '表示中の行をすべて選ぶ');
+    const visibleIds = rows.map((r) => r.id);
+    selectAll.checked = visibleIds.length > 0 && visibleIds.every((id) => state.selected.has(id));
+    selectAll.addEventListener('change', () => {
+      if (selectAll.checked) for (const id of visibleIds) state.selected.add(id);
+      else for (const id of visibleIds) state.selected.delete(id);
+      renderTable();
+    });
+    selectTh.append(selectAll);
+    headCells.push(selectTh);
+
+    // 現在地が分かっているときだけ距離を出す
+    if (state.here !== null) {
+      const th = document.createElement('th');
+      th.className = 'is-distance';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'sorter';
+      button.textContent = '距離';
+      if (state.sortKey === DISTANCE_KEY) {
+        const mark = document.createElement('span');
+        mark.className = 'sorter__mark';
+        mark.textContent = state.sortDir === 'asc' ? '▲' : '▼';
+        button.append(mark);
+      }
+      button.addEventListener('click', () => {
+        if (state.sortKey === DISTANCE_KEY) {
+          state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          state.sortKey = DISTANCE_KEY;
+          state.sortDir = 'asc';
+        }
+        renderTable();
+      });
+      th.append(button);
+      headCells.push(th);
+    }
+
+    el('poster-head').replaceChildren(...headCells, ...columns.map((column) => {
       const th = document.createElement('th');
       const button = document.createElement('button');
       button.type = 'button';
@@ -307,7 +362,31 @@ async function start() {
     // --- 本体 ---
     el('poster-body').replaceChildren(...rows.map((poster) => {
       const tr = document.createElement('tr');
+      tr.classList.toggle('is-selected', state.selected.has(poster.id));
       tr.addEventListener('click', () => openEditor(poster));
+
+      const selectTd = document.createElement('td');
+      selectTd.className = 'is-select';
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.checked = state.selected.has(poster.id);
+      check.setAttribute('aria-label', 'この行を選ぶ');
+      // 行を押すと編集が開くので、印の操作は行に伝えない
+      check.addEventListener('click', (event) => event.stopPropagation());
+      check.addEventListener('change', () => {
+        if (check.checked) state.selected.add(poster.id);
+        else state.selected.delete(poster.id);
+        renderTable();
+      });
+      selectTd.append(check);
+      tr.append(selectTd);
+
+      if (state.here !== null) {
+        const td = document.createElement('td');
+        td.className = 'is-distance';
+        td.textContent = formatDistance(distanceOf(poster, state.here));
+        tr.append(td);
+      }
 
       for (const column of columns) {
         const td = document.createElement('td');
@@ -328,6 +407,7 @@ async function start() {
     el('filter-clear').hidden = !filtered;
 
     el('list-empty').hidden = rows.length > 0;
+    renderBulkBar();
   }
 
   el('search').addEventListener('input', (event) => {
@@ -335,6 +415,141 @@ async function start() {
     onFiltersChanged();
   });
 
+
+
+  // ================================================================ 一括操作・現在地
+
+  /** 距離での並べ替えを表す印。列ではないので通常のキーと分ける */
+  const DISTANCE_KEY = '__distance';
+
+  /** 一括操作の帯を描く @returns {void} */
+  function renderBulkBar() {
+    const count = state.selected.size;
+    el('bulk-bar').hidden = count === 0;
+    if (count === 0) return;
+
+    el('bulk-count').textContent = count + ' 件を選択中';
+
+    const status = /** @type {HTMLSelectElement} */ (el('bulk-status'));
+    if (status.options.length <= 1) {
+      status.replaceChildren(
+        Object.assign(document.createElement('option'), { value: '', textContent: '状態を変える…' }),
+        ...STATUS_OPTIONS.map((option) => Object.assign(document.createElement('option'), {
+          value: option, textContent: option + ' にする',
+        })),
+      );
+    }
+
+    const flag = /** @type {HTMLSelectElement} */ (el('bulk-flag'));
+    if (flag.options.length <= 1) {
+      const items = [
+        Object.assign(document.createElement('option'), { value: '', textContent: '条件を設定…' }),
+      ];
+      for (const option of FLAG_OPTIONS) {
+        items.push(Object.assign(document.createElement('option'), {
+          value: option.key + ':on', textContent: option.label + ' をつける',
+        }));
+        items.push(Object.assign(document.createElement('option'), {
+          value: option.key + ':off', textContent: option.label + ' をはずす',
+        }));
+      }
+      items.push(Object.assign(document.createElement('option'), {
+        value: 'showOnMap:on', textContent: 'マップ掲載 をつける',
+      }));
+      items.push(Object.assign(document.createElement('option'), {
+        value: 'showOnMap:off', textContent: 'マップ掲載 をはずす',
+      }));
+      flag.replaceChildren(...items);
+    }
+  }
+
+  /**
+   * 選んだ行に同じ内容をまとめて当てる。
+   * 件数を明示して確認を取る。取り消せない操作のため。
+   *
+   * @param {Record<string, *>} patch
+   * @param {string} description 確認文に出す説明
+   * @returns {Promise<void>}
+   */
+  async function applyBulk(patch, description) {
+    const candidate = current();
+    if (candidate === undefined || state.selected.size === 0) return;
+
+    const ids = [...state.selected];
+    if (!window.confirm(
+      ids.length + ' 件を ' + description + '。\n元に戻せません。よろしいですか？',
+    )) return;
+
+    try {
+      showError('list-error', 'list-error-text', '');
+      await db.updatePostersBulk(state.uid, candidate.id, ids, patch);
+      state.selected.clear();
+      renderTable();
+    } catch (error) {
+      showError('list-error', 'list-error-text', toMessage(error));
+    }
+  }
+
+  el('bulk-today').addEventListener('click', () => {
+    void applyBulk({ lastReplacedOn: todayText() }, '貼替日を ' + todayText() + ' にします');
+  });
+
+  el('bulk-status').addEventListener('change', (event) => {
+    const select = /** @type {HTMLSelectElement} */ (event.target);
+    const value = select.value;
+    select.selectedIndex = 0;
+    if (value === '') return;
+    void applyBulk({ status: value }, '状態を「' + value + '」にします');
+  });
+
+  el('bulk-flag').addEventListener('change', (event) => {
+    const select = /** @type {HTMLSelectElement} */ (event.target);
+    const value = select.value;
+    select.selectedIndex = 0;
+    if (value === '') return;
+
+    const [key, onOff] = value.split(':');
+    const on = onOff === 'on';
+    const label = FLAG_OPTIONS.find((o) => o.key === key)?.label
+      ?? (key === 'showOnMap' ? 'マップ掲載' : key);
+    void applyBulk({ [key]: on }, '「' + label + '」を' + (on ? 'つけます' : 'はずします'));
+  });
+
+  el('bulk-clear').addEventListener('click', () => {
+    state.selected.clear();
+    renderTable();
+  });
+
+  el('list-locate').addEventListener('click', async () => {
+    const button = /** @type {HTMLButtonElement} */ (el('list-locate'));
+    button.disabled = true;
+    try {
+      showError('list-error', 'list-error-text', '');
+      const position = await new Promise((resolve, reject) => {
+        if (navigator.geolocation === undefined) {
+          reject(new Error('この端末では現在地を取得できません'));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(resolve, (error) => {
+          const messages = {
+            1: '位置情報の利用が許可されていません。端末の設定をご確認ください。',
+            2: '現在地を取得できませんでした。屋外でお試しください。',
+            3: '現在地の取得に時間がかかっています。もう一度お試しください。',
+          };
+          reject(new Error(messages[error.code] ?? '現在地を取得できませんでした'));
+        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+      });
+
+      state.here = { lat: position.coords.latitude, lng: position.coords.longitude };
+      state.sortKey = DISTANCE_KEY;
+      state.sortDir = 'asc';
+      renderTable();
+    } catch (error) {
+      showError('list-error', 'list-error-text', toMessage(error));
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   // ================================================================ 絞り込み
 
@@ -430,6 +645,7 @@ async function start() {
   /** 絞り込みをすべて解除する @returns {void} */
   function clearFilters() {
     state.filters = emptyFilters();
+    state.selected.clear();
     /** @type {HTMLInputElement} */ (el('search')).value = '';
     renderFilterControls();
     onFiltersChanged();
@@ -1516,6 +1732,7 @@ async function start() {
     state.currentId = /** @type {HTMLSelectElement} */ (event.target).value;
     localStorage.setItem(lastCandidateKey(state.uid), state.currentId);
     state.filters = emptyFilters();
+    state.selected.clear();
     /** @type {HTMLInputElement} */ (el('search')).value = '';
     renderCandidate();
     renderColumns();

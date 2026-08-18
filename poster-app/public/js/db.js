@@ -347,3 +347,34 @@ export async function saveColorRules(uid, candidateId, colorRules, activeRuleId)
     updatedAt: serverTimestamp(),
   });
 }
+
+/**
+ * 選んだポスターに、同じ内容をまとめて当てる。
+ *
+ * 丸ごと置き換えるのではなく、指定した項目だけを書き換える。
+ * 一括操作で触っていない項目まで消えないようにするため。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {string[]} posterIds
+ * @param {Record<string, *>} patch 書き換える項目
+ * @returns {Promise<number>} 書き換えた件数
+ */
+export async function updatePostersBulk(uid, candidateId, posterIds, patch) {
+  const LIMIT = 400;
+  const ref = postersRef(uid, candidateId);
+
+  for (let start = 0; start < posterIds.length; start += LIMIT) {
+    const batch = writeBatch(db);
+    for (const posterId of posterIds.slice(start, start + LIMIT)) {
+      batch.update(doc(ref, posterId), {
+        ...patch,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      });
+    }
+    await batch.commit();
+  }
+
+  return posterIds.length;
+}

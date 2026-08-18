@@ -888,3 +888,47 @@ button.kpi {
   text-align: left;
   width: 100%;
 }
+
+/* ------------------------------------------------------------------ */
+/* 一括操作                                                            */
+/* ------------------------------------------------------------------ */
+
+.bulkbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  background: var(--gray-100);
+  border-left: 4px solid var(--blue);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.bulkbar[hidden] { display: none; }
+
+.bulkbar__count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bulkbar .select { min-height: 36px; font-size: 14px; }
+
+/* 選択列と距離列 */
+.table td.is-select,
+.table th.is-select {
+  width: 1%;
+  text-align: center;
+  padding-right: var(--space-2);
+}
+
+.table td.is-distance,
+.table th.is-distance {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-700);
+}
+
+/* 選択中の行を分かるようにする */
+.table tbody tr.is-selected td { background: #eaf1f9; }
+.table tbody tr.is-selected td:first-child { background: #eaf1f9; }
