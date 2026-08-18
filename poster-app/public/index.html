@@ -129,6 +129,7 @@
           <button type="button" class="button button--quiet" id="poster-duplicate">選んだ行を複製</button>
           <button type="button" class="button button--quiet" id="list-locate">現在地から近い順</button>
           <button type="button" class="button button--quiet" id="list-print">印刷・持ち出し</button>
+          <button type="button" class="button button--quiet" id="list-export">CSV書き出し</button>
         </div>
         <div class="toolbar toolbar--filters">
           <select class="select" id="filter-district" aria-label="地区で絞り込む"></select>
@@ -378,6 +379,36 @@
       </div>
 
       <div class="panel">
+        <h2>CSVの取り込み</h2>
+        <p class="text-sub">
+          Excelなどで作ったCSVを取り込みます。<strong>「番号」の列で突き合わせ</strong>、
+          同じ番号があれば更新、無ければ追加します。
+          <strong>取り込む前に内容を確認できます。</strong>
+        </p>
+
+        <div class="field">
+          <label class="field__label" for="import-file">CSVファイル</label>
+          <input class="input" type="file" id="import-file" accept=".csv,text/csv">
+        </div>
+
+        <div class="field">
+          <span class="field__label">取り込み方</span>
+          <label class="map-toggle">
+            <input type="radio" name="import-mode" value="merge" checked>
+            差分マージ（CSVに無い掲示場所はそのまま残す）
+          </label>
+          <label class="map-toggle">
+            <input type="radio" name="import-mode" value="replace">
+            全置換（CSVに無い掲示場所は削除する）
+          </label>
+        </div>
+
+        <div class="notice notice--error" id="import-error" hidden>
+          <span class="notice__label">エラー</span><span id="import-error-text"></span>
+        </div>
+      </div>
+
+      <div class="panel">
         <h2>列の管理</h2>
         <p class="text-sub">
           固定の28項目に加えて、必要な列を自由に追加できます。
@@ -463,6 +494,48 @@
       <span class="dialog__spacer"></span>
       <button type="button" class="button button--quiet" id="color-cancel">キャンセル</button>
       <button type="button" class="button button--primary" id="color-save">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="dialog" id="import-dialog">
+  <form method="dialog" class="dialog__form">
+    <h2 class="dialog__title">取り込む内容の確認</h2>
+    <div class="dialog__body">
+      <div class="kpis" id="import-counts"></div>
+
+      <div id="import-unknown" hidden>
+        <h3>台帳に無い列</h3>
+        <p class="text-sub" id="import-unknown-list"></p>
+        <label class="map-toggle">
+          <input type="checkbox" id="import-add-columns">
+          これらを新しい列として追加する（外すとその列は取り込みません）
+        </label>
+      </div>
+
+      <div id="import-warnings" hidden>
+        <h3>確認したいこと</h3>
+        <ul class="list" id="import-warning-list"></ul>
+      </div>
+
+      <div id="import-errors" hidden>
+        <h3>取り込めない理由</h3>
+        <ul class="list" id="import-error-list"></ul>
+      </div>
+
+      <h3>取り込み後の例（先頭5件）</h3>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr id="import-preview-head"></tr></thead>
+          <tbody id="import-preview-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="dialog__actions">
+      <span class="dialog__spacer"></span>
+      <button type="button" class="button button--quiet" id="import-cancel">キャンセル</button>
+      <button type="button" class="button button--primary" id="import-run">この内容で取り込む</button>
     </div>
   </form>
 </dialog>

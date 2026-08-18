@@ -35,6 +35,8 @@ import {
 } from './stats.js';
 import { coverageByTown, formatPer10k, BASIS } from './coverage.js';
 import { hasChanges } from './changes.js';
+import { parseCsv, buildCsv, csvColumns, decodeCsvBytes, withBom } from './csv.js';
+import { buildImportPlan } from './import-plan.js';
 import { TOWN_POPULATION, POPULATION_AS_OF } from './population.js';
 import {
   PALETTE, modeForColumn, defaultRuleFor, REFRESHED_FIELD, bucketOf, buildLegend,
@@ -100,6 +102,8 @@ const state = {
   editingOriginal: null,
   sync: { fromCache: false, pending: false },
   editingCell: null,
+  importRows: null,
+  importPlan: null,
 };
 
 /** @returns {any} */
@@ -1998,6 +2002,215 @@ async function start() {
   el('coverage-basis').addEventListener('change', (event) => {
     state.coverageBasis = /** @type {HTMLSelectElement} */ (event.target).value;
     renderCoverage();
+  });
+
+
+  // ================================================================ CSV
+
+  /**
+   * いま一覧に出ている行をCSVで書き出す。
+   *
+   * 全件ではなく絞り込んだ結果を出す。「脚立が要る場所だけ渡す」
+   * といった使い方ができるようにするため。
+   *
+   * @returns {void}
+   */
+  function exportCsv() {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    const rows = visibleRows();
+    const text = buildCsv(rows, candidate.columns);
+
+    // BOMを付けないとExcelがUTF-8と見なさず文字化けする
+    const blob = new Blob([withBom(text)], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+
+    const name = candidate.name.replace(/[\\/:*?"<>|]/g, '_')
+      + '_' + todayText() + '.csv';
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  el('list-export').addEventListener('click', exportCsv);
+
+  /** 選ばれている取り込み方 @returns {'merge'|'replace'} */
+  function importMode() {
+    const checked = document.querySelector('input[name="import-mode"]:checked');
+    return /** @type {HTMLInputElement} */ (checked)?.value === 'replace' ? 'replace' : 'merge';
+  }
+
+  /**
+   * 取り込み計画を組み直して確認画面に映す。
+   * 知らない列を足す指定があれば、その列を加えた状態で組み立てる。
+   * @returns {void}
+   */
+  function refreshImportPlan() {
+    const candidate = current();
+    if (candidate === undefined || state.importRows === null) return;
+
+    let columns = candidate.columns;
+
+    const addColumns = /** @type {HTMLInputElement} */ (el('import-add-columns')).checked;
+    if (addColumns) {
+      const first = buildImportPlan(state.importRows, state.posters, columns, importMode());
+      for (const label of first.unknownColumns) {
+        columns = addCustomColumn(columns, { label, type: 'text' });
+      }
+    }
+
+    state.importColumns = columns;
+    state.importPlan = buildImportPlan(state.importRows, state.posters, columns, importMode());
+    renderImportPreview();
+  }
+
+  /** 確認画面を描く @returns {void} */
+  function renderImportPreview() {
+    const plan = state.importPlan;
+    if (plan === null) return;
+
+    el('import-counts').replaceChildren(
+      buildKpi({ label: '追加', value: plan.add.length, unit: '件' }),
+      buildKpi({ label: '更新', value: plan.update.length, unit: '件' }),
+      buildKpi({
+        label: '削除', value: plan.remove.length, unit: '件',
+        tone: plan.remove.length > 0 ? 'alert' : undefined,
+        note: plan.remove.length > 0 ? '元に戻せません' : '',
+      }),
+    );
+
+    // 台帳に無い列
+    el('import-unknown').hidden = plan.unknownColumns.length === 0;
+    el('import-unknown-list').textContent = plan.unknownColumns.join('、');
+
+    // 警告（止めはしないが見てほしいもの）
+    const warnings = [];
+    if (plan.duplicateAddresses.length > 0) {
+      warnings.push('同じ掲示住所が複数あります: ' + plan.duplicateAddresses.join('、')
+        + '（同じ建物に複数枚なら問題ありません）');
+    }
+    if (plan.remove.length > 0) {
+      warnings.push('全置換のため、CSVに無い ' + plan.remove.length + ' 件が削除されます。');
+    }
+    el('import-warnings').hidden = warnings.length === 0;
+    el('import-warning-list').replaceChildren(...warnings.map((text) => {
+      const li = document.createElement('li');
+      li.className = 'list__item';
+      li.textContent = text;
+      return li;
+    }));
+
+    // 取り込めない理由
+    el('import-errors').hidden = plan.errors.length === 0;
+    el('import-error-list').replaceChildren(...plan.errors.slice(0, 20).map((text) => {
+      const li = document.createElement('li');
+      li.className = 'list__item';
+      li.textContent = text;
+      return li;
+    }));
+
+    // 取り込み後の例
+    const columns = orderedColumns(state.importColumns ?? [], { includeHidden: false }).slice(0, 8);
+    el('import-preview-head').replaceChildren(...columns.map((column) => {
+      const th = document.createElement('th');
+      th.textContent = column.label;
+      return th;
+    }));
+
+    const samples = [...plan.add.map((a) => a.poster), ...plan.update.map((u) => u.poster)]
+      .slice(0, 5);
+    el('import-preview-body').replaceChildren(...samples.map((poster) => {
+      const tr = document.createElement('tr');
+      for (const column of columns) {
+        const td = document.createElement('td');
+        td.textContent = formatValue(posterValue(poster, column), column.type);
+        tr.append(td);
+      }
+      return tr;
+    }));
+
+    /** @type {HTMLButtonElement} */ (el('import-run')).disabled = plan.blocked;
+  }
+
+  el('import-file').addEventListener('change', async (event) => {
+    const input = /** @type {HTMLInputElement} */ (event.target);
+    const file = input.files?.[0];
+    if (file === undefined) return;
+
+    try {
+      showError('import-error', 'import-error-text', '');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      state.importRows = parseCsv(decodeCsvBytes(bytes));
+      /** @type {HTMLInputElement} */ (el('import-add-columns')).checked = false;
+      refreshImportPlan();
+      /** @type {HTMLDialogElement} */ (el('import-dialog')).showModal();
+    } catch (error) {
+      showError('import-error', 'import-error-text', toMessage(error));
+    } finally {
+      // 同じファイルを選び直せるようにする
+      input.value = '';
+    }
+  });
+
+  el('import-add-columns').addEventListener('change', refreshImportPlan);
+  for (const radio of document.querySelectorAll('input[name="import-mode"]')) {
+    radio.addEventListener('change', refreshImportPlan);
+  }
+
+  el('import-cancel').addEventListener('click', () => {
+    state.importRows = null;
+    state.importPlan = null;
+    /** @type {HTMLDialogElement} */ (el('import-dialog')).close();
+  });
+
+  el('import-run').addEventListener('click', async () => {
+    const candidate = current();
+    const plan = state.importPlan;
+    if (candidate === undefined || plan === null || plan.blocked) return;
+
+    const summary = '追加 ' + plan.add.length + ' 件／更新 ' + plan.update.length + ' 件'
+      + (plan.remove.length > 0 ? '／削除 ' + plan.remove.length + ' 件' : '');
+    if (!window.confirm(summary + ' を実行します。\n元に戻せません。よろしいですか？')) return;
+
+    const button = /** @type {HTMLButtonElement} */ (el('import-run'));
+    button.disabled = true;
+
+    try {
+      showError('import-error', 'import-error-text', '');
+
+      // 列を増やした場合は先に保存する。値の置き場所が無いと取り込めないため
+      if (state.importColumns !== undefined && state.importColumns !== candidate.columns) {
+        await db.saveColumns(state.uid, candidate.id, state.importColumns);
+        candidate.columns = state.importColumns;
+      }
+
+      if (plan.add.length > 0) {
+        await db.createPostersBulk(state.uid, candidate.id, plan.add.map((a) => a.poster));
+      }
+      for (const item of plan.update) {
+        await db.savePoster(state.uid, candidate.id, item.id, item.poster);
+      }
+      for (const item of plan.remove) {
+        await db.deletePoster(state.uid, candidate.id, item.id);
+      }
+
+      state.importRows = null;
+      state.importPlan = null;
+      /** @type {HTMLDialogElement} */ (el('import-dialog')).close();
+      await reload();
+      showTab('list');
+    } catch (error) {
+      showError('import-error', 'import-error-text', toMessage(error));
+      /** @type {HTMLDialogElement} */ (el('import-dialog')).close();
+    } finally {
+      button.disabled = false;
+    }
   });
 
   // ================================================================ デモ台帳
