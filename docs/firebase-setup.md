@@ -231,6 +231,53 @@ GitHubのリポジトリ →「Settings」→「Secrets and variables」→「Ac
 
 ---
 
+### 8-3. ★ サービスアカウントに権限を与える ★
+
+**鍵を作っただけでは足りません。** Firebase の「新しい秘密鍵の生成」で作られる
+サービスアカウントに付いているのは
+`Firebase Admin SDK Administrator Service Agent` という役割だけで、これは
+**アプリからデータを読み書きするための権限**であり、**デプロイの権限ではありません**。
+
+このまま進めると、デプロイが次のエラーで止まります。
+
+```
+Error: Permission denied to get service [firestore.googleapis.com]
+HTTP Error: 403
+```
+
+> **鍵は身分証、権限は許可証。**身分証があっても、入れる部屋は別途決まります。
+
+#### やること
+
+1. https://console.cloud.google.com/iam-admin/iam?project=<ID> を開く
+2. 一覧から `firebase-adminsdk-xxxxx@<ID>.iam.gserviceaccount.com` を探す
+   - 見つからない場合は「**Google 提供のロール付与を含める**」にチェックを入れる
+3. その行の右端の**鉛筆アイコン**を押す（右からパネルが出る）
+4. 「**＋ 別のロールを追加**」を押し、検索して次を選ぶ
+
+| ロール | 英語表示 | 用途 |
+|---|---|---|
+| Firebase 管理者 | **Firebase Admin** | Hosting と Firestoreルールのデプロイ |
+| サービス使用量ユーザー | **Service Usage Consumer** | 「APIが有効か」の確認 |
+
+> ⚠️ `Firebase Admin SDK ...` を選ばないこと。それが今付いている権限不足の役割。
+
+5. 「**保存**」。役割が3行になっていれば正しい
+
+```
+Firebase Admin SDK Administrator Service Agent   ← 元からあるもの（消さない）
+Firebase Admin                                   ← 追加
+Service Usage Consumer                           ← 追加
+```
+
+#### 代替（推奨しない）
+
+役割が見つからない場合は `編集者`（Editor）1つでも動く。
+ただしこの鍵はGitHubのシークレットに置かれているため、
+漏れたときの被害を小さくする意味で、上の2つに絞る方がよい。
+
+---
+
 ## 手順9. 公開して iPhone で確認する
 
 1. `main` ブランチに push する
@@ -258,6 +305,7 @@ GitHubのリポジトリ →「Settings」→「Secrets and variables」→「Ac
 | 「このドメインはFirebaseに登録されていません」 | 手順4の承認済みドメインに追加する |
 | 自分は入れるが**他の人が入れない** | Google Cloud コンソール → APIとサービス → OAuth同意画面 → 公開ステータスが「テスト」なら、その人をテストユーザーに追加するか「本番環境」に公開する |
 | デプロイしたのに画面が変わらない | ブラウザのキャッシュ。`firebase.json` で no-cache を指定済みだが、以前開いた分が残っている場合は再読み込みする |
+| **`Permission denied to get service ... 403`** | サービスアカウントの権限不足。**手順8-3**を行う |
 | Actions が「シークレットが設定されていません」で失敗 | 手順8を確認。名前の綴りが一致しているか |
 
 ---
