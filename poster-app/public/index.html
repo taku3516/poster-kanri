@@ -151,6 +151,10 @@
           <button type="button" class="button button--quiet" id="map-locate">現在地</button>
           <button type="button" class="button button--quiet" id="map-fit">全体を表示</button>
           <label class="map-toggle">
+            <input type="checkbox" id="map-drag-mode">
+            ピンの移動を許可
+          </label>
+          <label class="map-toggle">
             <input type="checkbox" id="map-add-mode">
             地図を押してピンを追加
           </label>
@@ -162,9 +166,16 @@
         <p class="text-sub" id="map-status"></p>
         <div id="map" class="map"></div>
         <div class="legend" id="map-legend"></div>
+        <div class="notice notice--info" id="map-undo" hidden>
+          <span class="notice__label">位置を変えました</span>
+          <span id="map-undo-text"></span>
+          <button type="button" class="button button--quiet" id="map-undo-button">元に戻す</button>
+        </div>
+
         <p class="text-sub">
-          ピンをドラッグすると位置を直せます。直した位置は「座標確定」が付き、
-          住所からの再計算で戻りません。
+          ピンは既定では動きません。動かすときは「ピンの移動を許可」を入れるか、
+          ピンを押して「このピンの位置を動かす」を選んでください。
+          直した位置は「座標確定」が付き、住所からの再計算で戻りません。
         </p>
         <div class="notice notice--error" id="map-error" hidden>
           <span class="notice__label">エラー</span><span id="map-error-text"></span>

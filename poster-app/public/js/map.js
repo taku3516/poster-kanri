@@ -82,6 +82,13 @@ export function createMap(elementId, handlers) {
   /** 地図を押してピンを足す状態か */
   let addMode = false;
 
+  /**
+   * ピンを動かせる状態か。
+   * 既定は「動かせない」。地図を掴んだつもりでピンが動く誤操作を防ぐため、
+   * 動かすには明示的な操作（移動を許可する／その1本だけ解除する）を要する。
+   */
+  let dragEnabled = false;
+
   map.on('click', (event) => {
     if (!addMode) return;
     handlers.onMapClick(event.latlng.lat, event.latlng.lng);
@@ -125,7 +132,9 @@ export function createMap(elementId, handlers) {
         });
 
         const marker = L.marker([poster.lat, poster.lng],
-          icon === undefined ? { draggable: true } : { draggable: true, icon });
+          icon === undefined
+            ? { draggable: dragEnabled }
+            : { draggable: dragEnabled, icon });
 
         const title = [
           noCol === undefined ? '' : posterValue(poster, noCol),
@@ -155,7 +164,24 @@ export function createMap(elementId, handlers) {
         open.style.marginTop = '8px';
         open.textContent = 'この掲示場所を開く';
         open.addEventListener('click', () => handlers.onMarkerClick(poster.id));
-        box.append(strong, sub, legend, open);
+
+        // このピン1本だけ移動を許す。全体を移動可能にせずに直せる
+        const unlock = document.createElement('button');
+        unlock.type = 'button';
+        unlock.className = 'button button--quiet';
+        unlock.style.marginTop = '4px';
+        const setUnlockLabel = () => {
+          const on = marker.dragging?.enabled() === true;
+          unlock.textContent = on ? '移動できます（ドラッグ）' : 'このピンの位置を動かす';
+          unlock.disabled = on;
+        };
+        unlock.addEventListener('click', () => {
+          marker.dragging?.enable();
+          setUnlockLabel();
+        });
+        marker.on('popupopen', setUnlockLabel);
+        setUnlockLabel();
+        box.append(strong, sub, legend, open, unlock);
 
         marker.bindPopup(box);
 
@@ -164,6 +190,7 @@ export function createMap(elementId, handlers) {
           handlers.onMarkerMoved(poster.id, lat, lng);
         });
 
+        marker.__posterId = poster.id;
         cluster.addLayer(marker);
         shown += 1;
       }
@@ -182,6 +209,37 @@ export function createMap(elementId, handlers) {
       } else {
         map.fitBounds(SHINAGAWA_BOUNDS);
       }
+    },
+
+    /**
+     * ピンを動かせるようにするかどうか。
+     * 既にある印にもその場で反映する。
+     *
+     * @param {boolean} enabled
+     * @returns {void}
+     */
+    setDragEnabled(enabled) {
+      dragEnabled = enabled;
+      cluster.eachLayer((marker) => {
+        if (marker.dragging === undefined) return;
+        if (enabled) marker.dragging.enable();
+        else marker.dragging.disable();
+      });
+    },
+
+    /**
+     * 指定した掲示場所のピンを、その位置へ戻す。
+     * 動かしたのを取り消すときに使う。
+     *
+     * @param {string} posterId
+     * @param {number} lat
+     * @param {number} lng
+     * @returns {void}
+     */
+    moveMarker(posterId, lat, lng) {
+      cluster.eachLayer((marker) => {
+        if (marker.__posterId === posterId) marker.setLatLng([lat, lng]);
+      });
     },
 
     /**

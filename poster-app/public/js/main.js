@@ -82,6 +82,7 @@ const state = {
   editingId: null, draft: null,
   map: null,
   editingRule: null,
+  lastMove: null,
 };
 
 /** @returns {any} */
@@ -532,6 +533,10 @@ async function start() {
     if (candidate === undefined) return;
 
     const shown = state.map.setPosters(state.posters, candidate.columns, colorForFactory());
+    // 描き直すと印が作り直されるので、移動の許可を入れ直す
+    state.map.setDragEnabled(
+      /** @type {HTMLInputElement} */ (el('map-drag-mode')).checked,
+    );
     renderLegend();
     const pending = state.posters.filter(needsGeocoding).length;
     const hidden = state.posters.filter((p) => p.showOnMap === false).length;
@@ -556,15 +561,67 @@ async function start() {
     const poster = state.posters.find((p) => p.id === posterId);
     if (candidate === undefined || poster === undefined) return;
 
+    // 動かす前の位置を控える。誤操作をその場で取り消せるようにするため
+    state.lastMove = {
+      posterId,
+      lat: poster.lat,
+      lng: poster.lng,
+      coordFixed: poster.coordFixed === true,
+      label: String(poster.placeName || poster.no || 'この掲示場所'),
+    };
+
     try {
       showError('map-error', 'map-error-text', '');
       await db.savePoster(state.uid, candidate.id, posterId, {
         ...poster, lat, lng, coordFixed: true,
       });
+
+      el('map-undo-text').textContent = state.lastMove.label;
+      el('map-undo').hidden = false;
     } catch (error) {
       showError('map-error', 'map-error-text', toMessage(error));
     }
   }
+
+  /**
+   * 直前の移動を取り消す。
+   * 元が「座標なし」だった場合は座標なしに戻す。
+   * @returns {Promise<void>}
+   */
+  async function undoLastMove() {
+    const candidate = current();
+    const move = state.lastMove;
+    if (candidate === undefined || move === null) return;
+
+    const poster = state.posters.find((p) => p.id === move.posterId);
+    if (poster === undefined) return;
+
+    try {
+      showError('map-error', 'map-error-text', '');
+      await db.savePoster(state.uid, candidate.id, move.posterId, {
+        ...poster, lat: move.lat, lng: move.lng, coordFixed: move.coordFixed,
+      });
+
+      if (typeof move.lat === 'number' && typeof move.lng === 'number') {
+        state.map?.moveMarker(move.posterId, move.lat, move.lng);
+      }
+
+      state.lastMove = null;
+      el('map-undo').hidden = true;
+    } catch (error) {
+      showError('map-error', 'map-error-text', toMessage(error));
+    }
+  }
+
+  el('map-undo-button').addEventListener('click', () => void undoLastMove());
+
+  el('map-drag-mode').addEventListener('change', (event) => {
+    const on = /** @type {HTMLInputElement} */ (event.target).checked;
+    state.map?.setDragEnabled(on);
+    el('map-status').textContent = on
+      ? 'ピンをドラッグして位置を直せます。終わったらこの許可を外してください。'
+      : 'ピンは固定されています。';
+  });
 
   /**
    * 地図を押して新規追加。押した場所の住所を引いて初期値に入れる。
