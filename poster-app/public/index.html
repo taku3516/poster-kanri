@@ -251,6 +251,23 @@
       </div>
 
       <div class="panel">
+        <h2>人口あたりのカバー率</h2>
+        <p class="text-sub">
+          <strong>手薄な地区が上</strong>に来ます。掲示が1枚も無い地区も並びます
+          （件数の集計では出てこないため、ここでしか気づけません）。
+        </p>
+        <div class="toolbar">
+          <label class="map-toggle" for="coverage-basis">分母</label>
+          <select class="select" id="coverage-basis">
+            <option value="voters">有権者（18歳以上）</option>
+            <option value="population">総人口</option>
+          </select>
+        </div>
+        <div class="bars" id="bars-coverage"></div>
+        <p class="text-sub" id="coverage-note"></p>
+      </div>
+
+      <div class="panel">
         <h2>紹介者別</h2>
         <p class="text-sub">
           紹介が多い方ほど関係が濃いと考えられます。お礼や次の依頼の優先順位に。

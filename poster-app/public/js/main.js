@@ -32,6 +32,8 @@ import { distanceOf, formatDistance, sortByDistance } from './distance.js';
 import {
   summarize, byDistrict, stalest, lastRefreshedOn, ageDistribution, byIntroducer,
 } from './stats.js';
+import { coverageByTown, formatPer10k, BASIS } from './coverage.js';
+import { TOWN_POPULATION, POPULATION_AS_OF } from './population.js';
 import {
   PALETTE, modeForColumn, defaultRuleFor, REFRESHED_FIELD, bucketOf, buildLegend,
 } from './color-rules.js';
@@ -92,6 +94,7 @@ const state = {
   lastMove: null,
   here: null,
   selected: new Set(),
+  coverageBasis: BASIS.voters,
 };
 
 /** @returns {any} */
@@ -1549,6 +1552,9 @@ async function start() {
       })),
       ' 件');
 
+    // --- 人口あたりのカバー率 ---
+    renderCoverage();
+
     // --- 紹介者別 ---
     const introducers = byIntroducer(state.posters);
     renderBars('bars-introducer',
@@ -1607,6 +1613,59 @@ async function start() {
       return tr;
     }));
   }
+
+
+  /**
+   * 人口あたりのカバー率を描く。
+   * 手薄な地区が上に来る。掲示が無い地区も並ぶ。
+   * @returns {void}
+   */
+  function renderCoverage() {
+    // 分母が1000人に満たない地区は順位から外す。
+    // 広町（有権者184人）のような地区は1枚の増減で率が跳ね、
+    // 外れ値として他の地区の棒を潰してしまう
+    const MIN_PEOPLE = 1000;
+    const rows = coverageByTown(
+      state.posters, TOWN_POPULATION, state.coverageBasis, MIN_PEOPLE);
+
+    const withRate = rows.filter((row) => row.per10k !== null);
+    const zero = withRate.filter((row) => row.sheets === 0).length;
+
+    // 外した地区を黙って消すと、そこに掲示している分が見えなくなる
+    const small = rows.smallPopulation;
+    const smallSheets = small.reduce((sum, row) => sum + row.sheets, 0);
+
+    renderBars('bars-coverage', withRate.map((row) => ({
+      label: row.district,
+      value: Math.round(row.per10k * 10) / 10,
+      // 掲示が1枚も無い地区は目を引くようにする
+      tone: row.sheets === 0 ? 'attention' : undefined,
+      onClick: () => focusList({ district: row.district }),
+    })), ' 枚/万人');
+
+    const basisLabel = state.coverageBasis === BASIS.population ? '総人口' : '有権者（18歳以上）';
+    const parts = [
+      '分母は' + basisLabel + '（品川区オープンデータ ' + POPULATION_AS_OF + '時点）。',
+    ];
+    if (zero > 0) parts.push('掲示が1枚も無い地区が ' + zero + ' あります。');
+    if (rows.excluded > 0) {
+      parts.push('区外・地区未設定の ' + rows.excluded + ' 件は分母が無いため対象外です。');
+    }
+    if (small.length > 0) {
+      parts.push(
+        '居住者が少ない ' + small.length + ' 地区（'
+        + small.map((row) => row.district).join('・')
+        + '）は率が実態を表さないため順位から外しています'
+        + (smallSheets > 0 ? '（掲示 ' + smallSheets + ' 枚）' : '') + '。',
+      );
+    }
+    el('coverage-note').textContent = parts.join(' ');
+  }
+
+  el('coverage-basis').addEventListener('change', (event) => {
+    state.coverageBasis = /** @type {HTMLSelectElement} */ (event.target).value;
+    renderCoverage();
+  });
 
   // ================================================================ デモ台帳
 
