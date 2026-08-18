@@ -1,0 +1,90 @@
+# ポスター管理アプリを Firebase Hosting へ配信する。
+#
+# GitHub Pages を使わない理由は docs/requirements.md 3.2 を参照。
+# 要点: iOS では配信元と authDomain のドメインが一致していないと
+# Google ログインが完了しない。
+
+name: ポスター管理アプリのデプロイ
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'poster-app/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+# 同じブランチのデプロイが重ならないようにする
+concurrency:
+  group: poster-app-deploy
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: テスト
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: テストを実行する
+        working-directory: poster-app
+        run: npm test
+
+  deploy:
+    name: 配信
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 接続設定はリポジトリに置かず、ここで組み立てる
+      - name: Firebase の接続設定を生成する
+        working-directory: poster-app
+        env:
+          WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
+        run: |
+          if [ -z "$WEB_CONFIG" ]; then
+            echo "::error::シークレット FIREBASE_WEB_CONFIG が設定されていません"
+            exit 1
+          fi
+          printf 'export const firebaseConfig = %s;\n' "$WEB_CONFIG" \
+            > public/js/firebase-config.js
+          node --input-type=module \
+            -e "import('./public/js/firebase-config.js').then(m => {
+                  if (!m.firebaseConfig?.authDomain) {
+                    console.error('authDomain がありません');
+                    process.exit(1);
+                  }
+                  console.log('authDomain:', m.firebaseConfig.authDomain);
+                })"
+
+      - name: 認証情報を書き出す
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SERVICE_ACCOUNT" ]; then
+            echo "::error::シークレット FIREBASE_SERVICE_ACCOUNT が設定されていません"
+            exit 1
+          fi
+          printf '%s' "$SERVICE_ACCOUNT" > "$RUNNER_TEMP/service-account.json"
+
+      - name: Hosting とセキュリティルールを配信する
+        working-directory: poster-app
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
+          PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          npx --yes firebase-tools@latest deploy \
+            --only hosting,firestore:rules \
+            --project "$PROJECT_ID" \
+            --non-interactive
+
+      - name: 認証情報を消す
+        if: always()
+        run: rm -f "$RUNNER_TEMP/service-account.json"

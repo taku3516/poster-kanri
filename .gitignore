@@ -1,0 +1,26 @@
+
+# --- ポスター管理アプリ ---
+# Firebase の接続設定（実値）。ひな形は firebase-config.example.js
+poster-app/public/js/firebase-config.js
+poster-app/.firebaserc
+poster-app/.firebase/
+
+# 実データ。個人情報を含むため絶対にコミットしない
+*.csv
+poster-app/data/
+
+# OS
+.DS_Store
+
+# --- このリポジトリはポスター管理アプリ専用 ---
+# 作業ディレクトリに残っている別案件のファイルは追跡しない。
+# （本体はそれぞれの元リポジトリにある）
+/shinagawa-gikai-api/
+/shinagawa-gikai ver2/
+/my-marketplace/
+/cache/
+/session-logs/
+/gdrive_upload.py
+/index.html
+/shinagawa_map.py
+/shinagawa_map.png

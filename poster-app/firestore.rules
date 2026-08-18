@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// 個人別台帳型。
+// データの入れ子そのものがアクセス境界になっている。
+// users/{uid} 配下は、その uid 本人しか読み書きできない。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+
+    // 上のどれにも当てはまらないものは全て拒否する。
+    // 新しいコレクションを足したとき、誤って開いたままにしないため。
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

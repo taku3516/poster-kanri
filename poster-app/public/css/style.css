@@ -1,0 +1,254 @@
+/*
+ * デザインの土台。
+ *
+ * デジタル庁「ダッシュボードガイドブック」の考え方に沿う。
+ *   - 色は7系統に限る（灰・青・薄青・シアン・緑・橙・赤）
+ *   - 基調は灰色。色は意味のあるところにだけ使う
+ *   - 装飾（影・角丸・階調）を増やさず、境界線と余白で構造を示す
+ *
+ * 色は白背景に対して WCAG AA（本文 4.5:1）を満たす値を選んでいる。
+ * 公式のカラートークンが入手できたら、この :root だけ差し替えればよい。
+ */
+
+:root {
+  /* 灰（基調） */
+  --gray-900: #1a1a1c;
+  --gray-700: #3d3d40;
+  --gray-600: #626264;
+  --gray-400: #949497;
+  --gray-300: #bfbfc2;
+  --gray-200: #d8d8db;
+  --gray-100: #edeeef;
+  --gray-50:  #f5f5f6;
+  --white:    #ffffff;
+
+  /* 意味を持つ色 */
+  --blue:       #0053a3;
+  --blue-dark:  #003f7d;
+  --light-blue: #3b6fb6;
+  --cyan:       #006f82;
+  --green:      #197a4b;
+  --orange:     #a64b00;
+  --red:        #b7272e;
+
+  /* 余白（4の倍数で統一する） */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  --radius: 4px;
+  --border: 1px solid var(--gray-200);
+
+  --font: system-ui, -apple-system, 'Hiragino Kaku Gothic ProN',
+          'Noto Sans JP', Meiryo, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--gray-900);
+  background: var(--gray-50);
+  /* iOS で入力欄に触れたときの拡大を防ぐ */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* ヘッダー                                                             */
+/* ------------------------------------------------------------------ */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  background: var(--white);
+  border-bottom: 2px solid var(--gray-900);
+}
+
+.app-header__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.app-header__user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 14px;
+  color: var(--gray-600);
+}
+
+.app-header__user[hidden] { display: none; }
+
+/* ------------------------------------------------------------------ */
+/* 本文                                                                 */
+/* ------------------------------------------------------------------ */
+
+.app-main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6) var(--space-12);
+}
+
+.panel {
+  background: var(--white);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-6);
+}
+
+.panel + .panel { margin-top: var(--space-4); }
+
+h2 {
+  margin: 0 0 var(--space-3);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+h3 {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gray-700);
+}
+
+p { margin: 0 0 var(--space-3); }
+p:last-child { margin-bottom: 0; }
+
+.text-sub {
+  font-size: 14px;
+  color: var(--gray-600);
+}
+
+/* ------------------------------------------------------------------ */
+/* ボタン                                                               */
+/* ------------------------------------------------------------------ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 48px; /* 屋外で押しやすい大きさを確保する */
+  padding: var(--space-2) var(--space-6);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.button--primary {
+  color: var(--white);
+  background: var(--blue);
+}
+
+.button--primary:hover { background: var(--blue-dark); }
+
+.button--quiet {
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--gray-700);
+  background: var(--white);
+  border-color: var(--gray-300);
+}
+
+.button--quiet:hover { background: var(--gray-100); }
+
+.button:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.button[disabled] {
+  color: var(--gray-600);
+  background: var(--gray-200);
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------ */
+/* 通知                                                                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * 色だけで意味を伝えない。左の太い罫と見出し語の両方で区別する。
+ */
+.notice {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  font-size: 14px;
+  background: var(--gray-100);
+  border-left: 4px solid var(--gray-400);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.notice[hidden] { display: none; }
+.notice__label { font-weight: 700; }
+
+.notice--error { border-left-color: var(--red); }
+.notice--error .notice__label { color: var(--red); }
+
+.notice--warn { border-left-color: var(--orange); }
+.notice--warn .notice__label { color: var(--orange); }
+
+.notice--info { border-left-color: var(--blue); }
+.notice--info .notice__label { color: var(--blue); }
+
+/* ------------------------------------------------------------------ */
+/* 定義リスト（状態の表示）                                              */
+/* ------------------------------------------------------------------ */
+
+.facts {
+  display: grid;
+  grid-template-columns: 10em 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: 14px;
+}
+
+.facts dt {
+  color: var(--gray-600);
+}
+
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ */
+/* 画面の切り替え                                                        */
+/* ------------------------------------------------------------------ */
+
+[hidden] { display: none !important; }
+
+/* ------------------------------------------------------------------ */
+/* 狭い画面                                                             */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 600px) {
+  .app-header { padding: var(--space-3) var(--space-4); }
+  .app-main { padding: var(--space-4) var(--space-4) var(--space-8); }
+  .panel { padding: var(--space-4); }
+  .facts { grid-template-columns: 1fr; gap: 0 0; }
+  .facts dt { margin-top: var(--space-2); }
+  .button { width: 100%; }
+  .button--quiet { width: auto; }
+}

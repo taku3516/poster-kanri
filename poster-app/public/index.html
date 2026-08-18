@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ポスター管理</title>
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1 class="app-header__title">ポスター管理</h1>
+  <div class="app-header__user" id="user-area" hidden>
+    <span id="user-name"></span>
+    <button type="button" class="button button--quiet" id="signout-button">ログアウト</button>
+  </div>
+</header>
+
+<main class="app-main">
+
+  <!-- 起動中 -->
+  <section class="panel" id="loading-view">
+    <p class="text-sub">読み込んでいます…</p>
+  </section>
+
+  <!-- 未ログイン -->
+  <section class="panel" id="signin-view" hidden>
+    <h2>ログイン</h2>
+    <p>
+      ポスターの掲示場所を管理します。
+      Googleアカウントごとに独立した台帳を持ち、他の方のデータは表示されません。
+    </p>
+
+    <p>
+      <button type="button" class="button button--primary" id="signin-button">
+        Googleアカウントでログイン
+      </button>
+    </p>
+
+    <div class="notice notice--error" id="signin-error" hidden>
+      <span class="notice__label">エラー</span>
+      <span id="signin-error-text"></span>
+    </div>
+
+    <div class="notice notice--warn" id="domain-warning" hidden>
+      <span class="notice__label">この端末ではログインできません</span>
+      <span>
+        配信元とFirebaseのドメインが異なるため、iPhone・iPadではログインが完了しません。
+        Firebase Hosting のURLから開き直してください。
+      </span>
+    </div>
+  </section>
+
+  <!-- 設定漏れ -->
+  <section class="panel" id="setup-view" hidden>
+    <h2>初期設定が終わっていません</h2>
+    <p>
+      Firebase の接続設定が読み込めませんでした。
+      <code>public/js/firebase-config.example.js</code> を
+      <code>firebase-config.js</code> という名前で複製し、
+      Firebase コンソールの値を貼り付けてください。
+    </p>
+    <div class="notice notice--error">
+      <span class="notice__label">詳細</span>
+      <span id="setup-error-text"></span>
+    </div>
+  </section>
+
+  <!-- ログイン済み -->
+  <section class="panel" id="app-view" hidden>
+    <h2>ログインできました</h2>
+    <p class="text-sub">
+      認証と配信の確認までが完了しています。台帳・地図・ダッシュボードは次の段階で作ります。
+    </p>
+
+    <h3>現在の状態</h3>
+    <dl class="facts">
+      <dt>アカウント</dt><dd id="fact-email"></dd>
+      <dt>利用者ID</dt><dd id="fact-uid"></dd>
+      <dt>配信元</dt><dd id="fact-host"></dd>
+      <dt>認証ドメイン</dt><dd id="fact-authdomain"></dd>
+      <dt>ログイン方式</dt><dd id="fact-method"></dd>
+    </dl>
+
+    <div class="notice notice--info" id="method-note" hidden>
+      <span class="notice__label">確認</span>
+      <span id="method-note-text"></span>
+    </div>
+  </section>
+
+</main>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
