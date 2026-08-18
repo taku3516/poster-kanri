@@ -1020,3 +1020,20 @@ button.kpi {
 
 .cell-open:hover { color: var(--blue-dark); }
 .cell-open:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+/* ピンの横に出す番号。地図の文字に埋もれないよう縁取りを付ける */
+.pin-label {
+  padding: 1px 5px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-900);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--gray-400);
+  border-radius: 3px;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+/* 吹き出しの三角は出さない（番号だけ見せたい） */
+.pin-label::before { display: none; }

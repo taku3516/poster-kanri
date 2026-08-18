@@ -82,6 +82,9 @@ export function createMap(elementId, handlers) {
   /** 地図を押してピンを足す状態か */
   let addMode = false;
 
+  /** ピンの横に番号を出すか。台帳との突き合わせに使う */
+  let showLabels = false;
+
   /**
    * ピンを動かせる状態か。
    * 既定は「動かせない」。地図を掴んだつもりでピンが動く誤操作を防ぐため、
@@ -185,6 +188,19 @@ export function createMap(elementId, handlers) {
 
         marker.bindPopup(box);
 
+        // 番号を常時出す。拡大したとき台帳との突き合わせが目でできる。
+        // 離れているときは重なって読めなくなるので、切り替えられるようにしている
+        const noText = noCol === undefined ? '' : String(posterValue(poster, noCol) ?? '');
+        if (noText !== '') {
+          marker.bindTooltip(noText, {
+            permanent: true,
+            direction: 'right',
+            offset: [10, -12],
+            className: 'pin-label',
+          });
+          if (!showLabels) marker.closeTooltip();
+        }
+
         marker.on('dragend', () => {
           const { lat, lng } = marker.getLatLng();
           handlers.onMarkerMoved(poster.id, lat, lng);
@@ -209,6 +225,20 @@ export function createMap(elementId, handlers) {
       } else {
         map.fitBounds(SHINAGAWA_BOUNDS);
       }
+    },
+
+    /**
+     * ピンの横に番号を出すかどうか。
+     * @param {boolean} enabled
+     * @returns {void}
+     */
+    setLabelsVisible(enabled) {
+      showLabels = enabled;
+      cluster.eachLayer((marker) => {
+        if (marker.getTooltip() === undefined) return;
+        if (enabled) marker.openTooltip();
+        else marker.closeTooltip();
+      });
     },
 
     /**

@@ -1017,6 +1017,39 @@ async function start() {
   }
 
   el('poster-add').addEventListener('click', () => openEditor(null));
+
+  el('poster-duplicate').addEventListener('click', () => {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    if (state.selected.size !== 1) {
+      showError('list-error', 'list-error-text', '複製したい行を1つだけ選んでください。');
+      return;
+    }
+
+    const source = state.posters.find((p) => state.selected.has(p.id));
+    if (source === undefined) return;
+
+    // 連絡先はそのまま引き継ぎ、その場所に固有のものは引き継がない。
+    // 同じ所有者の別の掲示場所を足す、という使い方を想定している
+    const { id, createdAt, updatedAt, updatedBy, ...rest } = source;
+    showError('list-error', 'list-error-text', '');
+    state.selected.clear();
+
+    openEditor(null, {
+      ...rest,
+      custom: { ...(source.custom ?? {}) },
+      no: nextPosterNo(state.posters),
+      placeName: '',
+      address: '',
+      postalCode: '',
+      lat: null,
+      lng: null,
+      coordFixed: false,
+      postedOn: null,
+      lastReplacedOn: null,
+    });
+  });
   /**
    * 編集を閉じてよいか。変更があるときだけ確認する。
    * 何も触っていないのに毎回聞かれると、読まずに押すようになるため。
@@ -1115,9 +1148,12 @@ async function start() {
 
     const rows = visibleRows();
     const shown = state.map.setPosters(rows, candidate.columns, colorForFactory(rows));
-    // 描き直すと印が作り直されるので、移動の許可を入れ直す
+    // 描き直すと印が作り直されるので、切り替えの状態を入れ直す
     state.map.setDragEnabled(
       /** @type {HTMLInputElement} */ (el('map-drag-mode')).checked,
+    );
+    state.map.setLabelsVisible(
+      /** @type {HTMLInputElement} */ (el('map-labels')).checked,
     );
     renderLegend();
     const pending = rows.filter(needsGeocoding).length;
@@ -1306,6 +1342,10 @@ async function start() {
     } catch (error) {
       showError('map-error', 'map-error-text', toMessage(error));
     }
+  });
+
+  el('map-labels').addEventListener('change', (event) => {
+    state.map?.setLabelsVisible(/** @type {HTMLInputElement} */ (event.target).checked);
   });
 
   el('map-add-mode').addEventListener('change', (event) => {

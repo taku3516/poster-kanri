@@ -126,6 +126,7 @@
         <div class="toolbar">
           <input class="input" type="search" id="search" placeholder="すべての列から検索" autocomplete="off">
           <button type="button" class="button button--primary" id="poster-add">新規追加</button>
+          <button type="button" class="button button--quiet" id="poster-duplicate">選んだ行を複製</button>
           <button type="button" class="button button--quiet" id="list-locate">現在地から近い順</button>
         </div>
         <div class="toolbar toolbar--filters">
@@ -185,6 +186,10 @@
           </button>
           <button type="button" class="button button--quiet" id="map-locate">現在地</button>
           <button type="button" class="button button--quiet" id="map-fit">全体を表示</button>
+          <label class="map-toggle">
+            <input type="checkbox" id="map-labels">
+            番号を表示
+          </label>
           <label class="map-toggle">
             <input type="checkbox" id="map-drag-mode">
             ピンの移動を許可
