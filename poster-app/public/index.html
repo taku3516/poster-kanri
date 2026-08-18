@@ -10,6 +10,10 @@
 
 <header class="app-header">
   <h1 class="app-header__title">ポスター管理</h1>
+  <div class="app-header__switch" id="candidate-area" hidden>
+    <label class="app-header__label" for="candidate-select">候補者</label>
+    <select id="candidate-select" class="select"></select>
+  </div>
   <div class="app-header__user" id="user-area" hidden>
     <span id="user-name"></span>
     <button type="button" class="button button--quiet" id="signout-button">ログアウト</button>
@@ -66,26 +70,93 @@
     </div>
   </section>
 
-  <!-- ログイン済み -->
-  <section class="panel" id="app-view" hidden>
-    <h2>ログインできました</h2>
+  <!-- ログイン済み・候補者が1件も無い -->
+  <section class="panel" id="empty-view" hidden>
+    <h2>最初の候補者を登録してください</h2>
     <p class="text-sub">
-      認証と配信の確認までが完了しています。台帳・地図・ダッシュボードは次の段階で作ります。
+      候補者ごとに独立した台帳を持ちます。あとから何人でも追加・切り替えできます。
     </p>
-
-    <h3>現在の状態</h3>
-    <dl class="facts">
-      <dt>アカウント</dt><dd id="fact-email"></dd>
-      <dt>利用者ID</dt><dd id="fact-uid"></dd>
-      <dt>配信元</dt><dd id="fact-host"></dd>
-      <dt>認証ドメイン</dt><dd id="fact-authdomain"></dd>
-      <dt>ログイン方式</dt><dd id="fact-method"></dd>
-    </dl>
-
-    <div class="notice notice--info" id="method-note" hidden>
-      <span class="notice__label">確認</span>
-      <span id="method-note-text"></span>
+    <div class="field">
+      <label class="field__label" for="first-candidate-name">候補者名</label>
+      <input class="input" type="text" id="first-candidate-name" placeholder="例: 山田太郎" autocomplete="off">
     </div>
+    <button type="button" class="button button--primary" id="first-candidate-create">
+      この名前で作成する
+    </button>
+    <div class="notice notice--error" id="empty-error" hidden>
+      <span class="notice__label">エラー</span><span id="empty-error-text"></span>
+    </div>
+  </section>
+
+  <!-- ログイン済み・候補者あり -->
+  <section id="app-view" hidden>
+
+    <div class="panel">
+      <h2 id="candidate-title">台帳</h2>
+      <dl class="facts">
+        <dt>掲示場所</dt><dd id="fact-posters">—</dd>
+        <dt>列の数</dt><dd id="fact-columns">—</dd>
+      </dl>
+      <p class="text-sub" style="margin-top:var(--space-4)">
+        一覧・地図・ダッシュボードは次の段階で作ります。
+      </p>
+      <p class="text-sub" id="diagnostics"></p>
+    </div>
+
+    <div class="panel">
+      <h2>候補者の管理</h2>
+
+      <h3>新しい候補者を追加する</h3>
+      <div class="row">
+        <input class="input" type="text" id="new-candidate-name" placeholder="候補者名" autocomplete="off">
+        <button type="button" class="button button--quiet" id="new-candidate-create">追加</button>
+      </div>
+
+      <h3>表示中の候補者の名前を変える</h3>
+      <div class="row">
+        <input class="input" type="text" id="rename-candidate-name" autocomplete="off">
+        <button type="button" class="button button--quiet" id="rename-candidate-save">変更</button>
+      </div>
+
+      <h3>表示中の候補者を保管する</h3>
+      <p class="text-sub">
+        一覧から外しますが、データは消えません。あとで戻せます。
+      </p>
+      <button type="button" class="button button--quiet" id="archive-candidate">保管する</button>
+
+      <div class="notice notice--error" id="candidate-error" hidden>
+        <span class="notice__label">エラー</span><span id="candidate-error-text"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>列の管理</h2>
+      <p class="text-sub">
+        固定の28項目に加えて、必要な列を自由に追加できます。
+        列名はあとから変えられます（データはそのまま残ります）。
+      </p>
+
+      <h3>列を追加する</h3>
+      <div class="row">
+        <input class="input" type="text" id="new-column-label" placeholder="列名" autocomplete="off">
+        <select class="select" id="new-column-type">
+          <option value="text">文字</option>
+          <option value="number">数値</option>
+          <option value="date">日付</option>
+          <option value="check">チェック</option>
+          <option value="select">選択</option>
+        </select>
+        <button type="button" class="button button--quiet" id="new-column-add">追加</button>
+      </div>
+
+      <h3>追加した列</h3>
+      <ul class="list" id="custom-column-list"></ul>
+
+      <div class="notice notice--error" id="column-error" hidden>
+        <span class="notice__label">エラー</span><span id="column-error-text"></span>
+      </div>
+    </div>
+
   </section>
 
 </main>
