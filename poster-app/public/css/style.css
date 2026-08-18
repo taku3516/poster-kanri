@@ -109,10 +109,16 @@ body {
 /* ------------------------------------------------------------------ */
 
 .app-main {
-  max-width: 720px;
+  /* 列が多い表を見るため広めに取る。読み物の幅は下で個別に抑える */
+  max-width: 1200px;
   margin: 0 auto;
-  padding: var(--space-8) var(--space-6) var(--space-12);
+  padding: var(--space-6) var(--space-6) var(--space-12);
 }
+
+/* 説明文が横に伸びすぎると読みにくいので行長を抑える */
+.panel p,
+.panel .facts,
+.panel .field { max-width: 68ch; }
 
 .panel {
   background: var(--white);
@@ -370,4 +376,224 @@ p:last-child { margin-bottom: 0; }
   .app-header__switch { margin-right: 0; }
   .row .input, .row .select { max-width: none; }
   .row .button { width: auto; }
+}
+
+/* ------------------------------------------------------------------ */
+/* タブ                                                                */
+/* ------------------------------------------------------------------ */
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--gray-300);
+}
+
+.tab {
+  padding: var(--space-2) var(--space-4);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gray-600);
+  background: none;
+  border: none;
+  /* 選択中を色だけで示さない。太い下線でも区別する */
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+
+.tab:hover { color: var(--gray-900); }
+
+.tab:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: -3px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 一覧の道具立て                                                       */
+/* ------------------------------------------------------------------ */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.toolbar .input { flex: 1 1 240px; max-width: 360px; }
+
+/* ------------------------------------------------------------------ */
+/* 表                                                                  */
+/* ------------------------------------------------------------------ */
+
+/* 列が多いので、表だけが横に動く。本文は横スクロールさせない */
+.table-wrap {
+  overflow-x: auto;
+  border: var(--border);
+  border-radius: var(--radius);
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.table th,
+.table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: var(--border);
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  font-size: 13px;
+  color: var(--gray-700);
+  background: var(--gray-50);
+  border-bottom: 2px solid var(--gray-300);
+}
+
+/* 番号の列は横に流れても残す。今どの行を見ているか見失わないため */
+.table th:first-child,
+.table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--white);
+  border-right: var(--border);
+}
+
+.table thead th:first-child { z-index: 3; background: var(--gray-50); }
+
+.table tbody tr:hover td { background: var(--gray-100); }
+.table tbody tr:hover td:first-child { background: var(--gray-100); }
+.table tbody tr { cursor: pointer; }
+
+/* 数値は桁を揃える */
+.table td.is-number { text-align: right; font-variant-numeric: tabular-nums; }
+.table td.is-check { text-align: center; }
+
+/* 並べ替えの見出し */
+.sorter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sorter:hover { color: var(--blue); }
+.sorter__mark { color: var(--blue); font-size: 11px; }
+
+/* ------------------------------------------------------------------ */
+/* 編集ダイアログ                                                       */
+/* ------------------------------------------------------------------ */
+
+.dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  color: var(--gray-900);
+  background: var(--white);
+  border: none;
+  border-radius: var(--radius);
+}
+
+.dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+
+.dialog__form { display: flex; flex-direction: column; max-height: calc(100vh - 64px); }
+
+.dialog__title {
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  font-size: 18px;
+  border-bottom: var(--border);
+}
+
+.dialog__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-6);
+}
+
+.dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  border-top: var(--border);
+  background: var(--gray-50);
+}
+
+.dialog__spacer { flex: 1; }
+
+.button--danger {
+  color: var(--red);
+  background: var(--white);
+  border-color: var(--red);
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  font-size: 14px;
+}
+
+.button--danger:hover { background: #fdf2f2; }
+
+/* 入力欄のまとまり */
+.form-grid {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+}
+
+.form-grid__label { font-size: 14px; color: var(--gray-700); }
+.form-grid .input,
+.form-grid .select { width: 100%; }
+
+.form-grid__group {
+  grid-column: 1 / -1;
+  margin-top: var(--space-4);
+  padding-bottom: var(--space-1);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gray-600);
+  border-bottom: var(--border);
+}
+
+/* チェックの並び */
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-1) var(--space-3);
+}
+
+.checks label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+  min-height: 32px;
+}
+
+@media (max-width: 760px) {
+  .form-grid { grid-template-columns: 1fr; gap: var(--space-1); }
+  .form-grid__label { margin-top: var(--space-2); }
+  .dialog { width: 100vw; max-width: none; height: 100vh; max-height: none; border-radius: 0; }
+  .dialog__form { max-height: 100vh; }
+  .toolbar .input { max-width: none; }
 }

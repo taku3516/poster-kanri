@@ -91,75 +91,127 @@
   <!-- ログイン済み・候補者あり -->
   <section id="app-view" hidden>
 
-    <div class="panel">
-      <h2 id="candidate-title">台帳</h2>
-      <dl class="facts">
-        <dt>掲示場所</dt><dd id="fact-posters">—</dd>
-        <dt>列の数</dt><dd id="fact-columns">—</dd>
-      </dl>
-      <p class="text-sub" style="margin-top:var(--space-4)">
-        一覧・地図・ダッシュボードは次の段階で作ります。
-      </p>
-      <p class="text-sub" id="diagnostics"></p>
-    </div>
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab" id="tab-list" role="tab" aria-selected="true">一覧</button>
+      <button type="button" class="tab" id="tab-settings" role="tab" aria-selected="false">設定</button>
+    </nav>
 
-    <div class="panel">
-      <h2>候補者の管理</h2>
+    <!-- ================= 一覧 ================= -->
+    <div id="panel-list">
+      <div class="panel">
+        <div class="toolbar">
+          <input class="input" type="search" id="search" placeholder="すべての列から検索" autocomplete="off">
+          <button type="button" class="button button--primary" id="poster-add">新規追加</button>
+        </div>
+        <p class="text-sub" id="list-count">読み込んでいます…</p>
 
-      <h3>新しい候補者を追加する</h3>
-      <div class="row">
-        <input class="input" type="text" id="new-candidate-name" placeholder="候補者名" autocomplete="off">
-        <button type="button" class="button button--quiet" id="new-candidate-create">追加</button>
-      </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr id="poster-head"></tr></thead>
+            <tbody id="poster-body"></tbody>
+          </table>
+        </div>
 
-      <h3>表示中の候補者の名前を変える</h3>
-      <div class="row">
-        <input class="input" type="text" id="rename-candidate-name" autocomplete="off">
-        <button type="button" class="button button--quiet" id="rename-candidate-save">変更</button>
-      </div>
+        <p class="list__empty" id="list-empty" hidden>
+          該当する掲示場所がありません。
+        </p>
 
-      <h3>表示中の候補者を保管する</h3>
-      <p class="text-sub">
-        一覧から外しますが、データは消えません。あとで戻せます。
-      </p>
-      <button type="button" class="button button--quiet" id="archive-candidate">保管する</button>
-
-      <div class="notice notice--error" id="candidate-error" hidden>
-        <span class="notice__label">エラー</span><span id="candidate-error-text"></span>
+        <div class="notice notice--error" id="list-error" hidden>
+          <span class="notice__label">エラー</span><span id="list-error-text"></span>
+        </div>
       </div>
     </div>
 
-    <div class="panel">
-      <h2>列の管理</h2>
-      <p class="text-sub">
-        固定の28項目に加えて、必要な列を自由に追加できます。
-        列名はあとから変えられます（データはそのまま残ります）。
-      </p>
+    <!-- ================= 設定 ================= -->
+    <div id="panel-settings" hidden>
 
-      <h3>列を追加する</h3>
-      <div class="row">
-        <input class="input" type="text" id="new-column-label" placeholder="列名" autocomplete="off">
-        <select class="select" id="new-column-type">
-          <option value="text">文字</option>
-          <option value="number">数値</option>
-          <option value="date">日付</option>
-          <option value="check">チェック</option>
-          <option value="select">選択</option>
-        </select>
-        <button type="button" class="button button--quiet" id="new-column-add">追加</button>
+      <div class="panel">
+        <h2 id="candidate-title">台帳</h2>
+        <dl class="facts">
+          <dt>掲示場所</dt><dd id="fact-posters">—</dd>
+          <dt>列の数</dt><dd id="fact-columns">—</dd>
+        </dl>
+        <p class="text-sub" id="diagnostics"></p>
       </div>
 
-      <h3>追加した列</h3>
-      <ul class="list" id="custom-column-list"></ul>
+      <div class="panel">
+        <h2>候補者の管理</h2>
 
-      <div class="notice notice--error" id="column-error" hidden>
-        <span class="notice__label">エラー</span><span id="column-error-text"></span>
+        <h3>新しい候補者を追加する</h3>
+        <div class="row">
+          <input class="input" type="text" id="new-candidate-name" placeholder="候補者名" autocomplete="off">
+          <button type="button" class="button button--quiet" id="new-candidate-create">追加</button>
+        </div>
+
+        <h3>表示中の候補者の名前を変える</h3>
+        <div class="row">
+          <input class="input" type="text" id="rename-candidate-name" autocomplete="off">
+          <button type="button" class="button button--quiet" id="rename-candidate-save">変更</button>
+        </div>
+
+        <h3>表示中の候補者を保管する</h3>
+        <p class="text-sub">一覧から外しますが、データは消えません。あとで戻せます。</p>
+        <button type="button" class="button button--quiet" id="archive-candidate">保管する</button>
+
+        <div class="notice notice--error" id="candidate-error" hidden>
+          <span class="notice__label">エラー</span><span id="candidate-error-text"></span>
+        </div>
       </div>
+
+      <div class="panel">
+        <h2>列の管理</h2>
+        <p class="text-sub">
+          固定の28項目に加えて、必要な列を自由に追加できます。
+          列名はあとから変えられます（データはそのまま残ります）。
+        </p>
+
+        <h3>列を追加する</h3>
+        <div class="row">
+          <input class="input" type="text" id="new-column-label" placeholder="列名" autocomplete="off">
+          <select class="select" id="new-column-type">
+            <option value="text">文字</option>
+            <option value="number">数値</option>
+            <option value="date">日付</option>
+            <option value="check">チェック</option>
+            <option value="select">選択</option>
+          </select>
+          <button type="button" class="button button--quiet" id="new-column-add">追加</button>
+        </div>
+
+        <h3>追加した列</h3>
+        <ul class="list" id="custom-column-list"></ul>
+
+        <h3>一覧に表示する列</h3>
+        <p class="text-sub">チェックを外した列は一覧の表に出ません（データは残ります）。</p>
+        <div class="checks" id="visibility-list"></div>
+
+        <div class="notice notice--error" id="column-error" hidden>
+          <span class="notice__label">エラー</span><span id="column-error-text"></span>
+        </div>
+      </div>
+
     </div>
-
   </section>
 
 </main>
+
+<dialog class="dialog" id="edit-dialog">
+  <form method="dialog" class="dialog__form" id="edit-form">
+    <h2 class="dialog__title" id="edit-title">掲示場所の編集</h2>
+    <div class="dialog__body" id="edit-fields"></div>
+
+    <div class="notice notice--error" id="edit-error" hidden>
+      <span class="notice__label">エラー</span><span id="edit-error-text"></span>
+    </div>
+
+    <div class="dialog__actions">
+      <button type="button" class="button button--danger" id="edit-delete">削除</button>
+      <span class="dialog__spacer"></span>
+      <button type="button" class="button button--quiet" id="edit-cancel">キャンセル</button>
+      <button type="button" class="button button--primary" id="edit-save">保存</button>
+    </div>
+  </form>
+</dialog>
 
 <script type="module" src="./js/main.js"></script>
 </body>

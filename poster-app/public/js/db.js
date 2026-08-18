@@ -23,6 +23,8 @@ import {
   query,
   orderBy,
   getCountFromServer,
+  onSnapshot,
+  setDoc,
 } from 'https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js';
 
 import { defaultColumns } from './schema.js';
@@ -207,3 +209,90 @@ export async function countPosters(uid, candidateId) {
   const snapshot = await getCountFromServer(postersRef(uid, candidateId));
   return snapshot.data().count;
 }
+
+// ------------------------------------------------------------------ ポスター
+
+/**
+ * ポスターの変化を見張る。端末をまたいだ同期はこれで実現している。
+ *
+ * onSnapshot は「取りに行く」のではなく「変わったら教えてもらう」形なので、
+ * 事務所のパソコンで直した内容が、現地のスマホに自動で反映される。
+ * オフライン中は手元の控えを返し、復帰時に差分が流れてくる。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {(posters: Record<string, *>[]) => void} onChange
+ * @param {(error: Error) => void} onError
+ * @returns {() => void} 見張りを止める関数
+ */
+export function watchPosters(uid, candidateId, onChange, onError) {
+  return onSnapshot(
+    postersRef(uid, candidateId),
+    (snapshot) => {
+      onChange(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    },
+    onError,
+  );
+}
+
+/**
+ * ポスターを1件足す。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {Record<string, *>} poster
+ * @returns {Promise<string>} 作られたID
+ */
+export async function createPoster(uid, candidateId, poster) {
+  const created = await addDoc(postersRef(uid, candidateId), {
+    ...poster,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  });
+  return created.id;
+}
+
+/**
+ * ポスターを丸ごと保存し直す。
+ *
+ * 差分更新ではなく置き換えにしているのは、列を消したときに
+ * 古い値が Firestore 側に残り続けるのを避けるため。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {string} posterId
+ * @param {Record<string, *>} poster
+ * @returns {Promise<void>}
+ */
+export async function savePoster(uid, candidateId, posterId, poster) {
+  const { id, createdAt, ...rest } = poster;
+  await setDoc(doc(postersRef(uid, candidateId), posterId), {
+    ...rest,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid,
+  }, { merge: false });
+}
+
+/**
+ * ポスターを1件消す。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {string} posterId
+ * @returns {Promise<void>}
+ */
+export async function deletePoster(uid, candidateId, posterId) {
+  await deleteDoc(doc(postersRef(uid, candidateId), posterId));
+}
+
+/**
+ * 列の表示・非表示を切り替えた列定義を保存する。
+ * saveColumns と同じだが、呼び出し側の意図が読めるように別名にしている。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {import('./schema.js').Column[]} columns
+ * @returns {Promise<void>}
+ */
+export const saveColumnVisibility = saveColumns;
