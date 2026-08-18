@@ -98,6 +98,7 @@ const state = {
   coverageBasis: BASIS.voters,
   editingOriginal: null,
   sync: { fromCache: false, pending: false },
+  editingCell: null,
 };
 
 /** @returns {any} */
@@ -373,7 +374,6 @@ async function start() {
     el('poster-body').replaceChildren(...rows.map((poster) => {
       const tr = document.createElement('tr');
       tr.classList.toggle('is-selected', state.selected.has(poster.id));
-      tr.addEventListener('click', () => openEditor(poster));
 
       const selectTd = document.createElement('td');
       selectTd.className = 'is-select';
@@ -399,11 +399,7 @@ async function start() {
       }
 
       for (const column of columns) {
-        const td = document.createElement('td');
-        if (column.type === 'number') td.className = 'is-number';
-        if (column.type === 'check') td.className = 'is-check';
-        td.textContent = formatValue(posterValue(poster, column), column.type);
-        tr.append(td);
+        tr.append(buildCell(poster, column));
       }
       return tr;
     }));
@@ -721,6 +717,169 @@ async function start() {
     renderFilterControls();
     showTab('list');
     onFiltersChanged();
+  }
+
+
+  // ================================================================ 表の中で直接編集
+
+  /**
+   * 表のセルを1つ作る。
+   *
+   * 押したセルだけを入力欄に変える。全セルを常時入力欄にすると
+   * 「行を押して詳細を開く」操作と衝突し、誤入力も増えるため。
+   *
+   * @param {Record<string, *>} poster
+   * @param {import('./schema.js').Column} column
+   * @returns {HTMLTableCellElement}
+   */
+  function buildCell(poster, column) {
+    const td = document.createElement('td');
+    if (column.type === 'number') td.className = 'is-number';
+    if (column.type === 'check') td.className = 'is-check';
+
+    // 番号は詳細を開く入口にする。全セルが直接編集になると
+    // 詳細を開く手段が無くなるため、先頭列にその役割を持たせる
+    if (column.key === 'no') {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'cell-open';
+      open.textContent = String(poster.no ?? '') || '(番号なし)';
+      open.title = '詳細を開く';
+      open.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openEditor(poster);
+      });
+      td.append(open);
+      return td;
+    }
+
+    const editing = state.editingCell !== null
+      && state.editingCell.posterId === poster.id
+      && state.editingCell.key === column.key;
+
+    if (editing) {
+      td.classList.add('is-editing');
+      td.append(buildCellInput(poster, column));
+      return td;
+    }
+
+    // チェックは押した瞬間に切り替える。入力欄にする手間が要らない
+    if (column.type === 'check') {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'cell-check';
+      button.textContent = poster[column.key] === true ? '✓' : '－';
+      button.setAttribute('aria-label',
+        column.label + '：' + (poster[column.key] === true ? 'あり' : 'なし'));
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void saveCell(poster, column, poster[column.key] !== true);
+      });
+      td.append(button);
+      return td;
+    }
+
+    const text = formatValue(posterValue(poster, column), column.type);
+    td.textContent = text;
+    td.classList.add('is-editable');
+    td.title = '押すとこの場で直せます';
+    td.addEventListener('click', (event) => {
+      event.stopPropagation();
+      state.editingCell = { posterId: poster.id, key: column.key };
+      renderTable();
+      /** @type {HTMLElement | null} */ (document.querySelector('.is-editing input, .is-editing select'))?.focus();
+    });
+    return td;
+  }
+
+  /**
+   * セルの入力欄を作る。Enterで確定、Escで取り消し。
+   * @param {Record<string, *>} poster
+   * @param {import('./schema.js').Column} column
+   * @returns {HTMLElement}
+   */
+  function buildCellInput(poster, column) {
+    const value = posterValue(poster, column);
+
+    if (column.key === 'status') {
+      const select = document.createElement('select');
+      select.className = 'select cell-input';
+      select.replaceChildren(...STATUS_OPTIONS.map((option) => {
+        const node = document.createElement('option');
+        node.value = option;
+        node.textContent = option;
+        node.selected = option === value;
+        return node;
+      }));
+      select.addEventListener('click', (event) => event.stopPropagation());
+      select.addEventListener('change', () => void saveCell(poster, column, select.value));
+      select.addEventListener('blur', () => void saveCell(poster, column, select.value));
+      return select;
+    }
+
+    const input = document.createElement('input');
+    input.className = 'input cell-input';
+    input.autocomplete = 'off';
+    input.type = column.type === 'date' ? 'date' : column.type === 'number' ? 'number' : 'text';
+    input.value = value === null || value === undefined ? '' : String(value);
+
+    input.addEventListener('click', (event) => event.stopPropagation());
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void saveCell(poster, column, parseValue(input.value, column.type));
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        state.editingCell = null;
+        renderTable();
+      }
+    });
+
+    // 画面外を押したときも確定する。押し直す手間を減らす
+    input.addEventListener('blur', () => {
+      void saveCell(poster, column, parseValue(input.value, column.type));
+    });
+
+    return input;
+  }
+
+  /**
+   * セル1つ分の変更を保存する。値が変わっていなければ何もしない。
+   *
+   * @param {Record<string, *>} poster
+   * @param {import('./schema.js').Column} column
+   * @param {*} value
+   * @returns {Promise<void>}
+   */
+  async function saveCell(poster, column, value) {
+    const candidate = current();
+    state.editingCell = null;
+
+    if (candidate === undefined) {
+      renderTable();
+      return;
+    }
+
+    const before = posterValue(poster, column);
+    const unchanged = before === value
+      || ((before === null || before === undefined || before === '')
+          && (value === null || value === undefined || value === ''));
+
+    if (unchanged) {
+      renderTable();
+      return;
+    }
+
+    try {
+      showError('list-error', 'list-error-text', '');
+      const next = setPosterValue(poster, column, value);
+      await db.savePoster(state.uid, candidate.id, poster.id, next);
+    } catch (error) {
+      showError('list-error', 'list-error-text', toMessage(error));
+      renderTable();
+    }
   }
 
   // ================================================================ 編集

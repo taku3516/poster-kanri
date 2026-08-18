@@ -967,3 +967,56 @@ button.kpi {
 @media (max-width: 760px) {
   .syncbar { padding: var(--space-2) var(--space-4); }
 }
+
+/* ------------------------------------------------------------------ */
+/* 表の中での直接編集                                                   */
+/* ------------------------------------------------------------------ */
+
+/* 押せることを控えめに示す。全セルが目立つと表が読みにくくなる */
+.table td.is-editable { cursor: text; }
+
+.table td.is-editable:hover {
+  box-shadow: inset 0 0 0 1px var(--gray-300);
+}
+
+.table td.is-editing { padding: 2px 4px; }
+
+.cell-input {
+  width: 100%;
+  min-width: 7em;
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  font-size: 14px;
+}
+
+/* チェックはその場で切り替える */
+.cell-check {
+  min-width: 32px;
+  min-height: 28px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--gray-900);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.cell-check:hover { border-color: var(--gray-300); background: var(--white); }
+.cell-check:focus-visible { outline: 3px solid var(--blue); outline-offset: 1px; }
+
+/* 番号列は詳細を開く入口 */
+.cell-open {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--blue);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cell-open:hover { color: var(--blue-dark); }
+.cell-open:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
