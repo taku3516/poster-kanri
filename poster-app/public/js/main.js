@@ -50,9 +50,9 @@ function el(id) {
   return node;
 }
 
-/** @param {'loading'|'signin'|'setup'|'empty'|'app'} name @returns {void} */
+/** @param {'loading'|'setup'|'empty'|'app'} name @returns {void} */
 function showView(name) {
-  for (const key of ['loading', 'signin', 'setup', 'empty', 'app']) {
+  for (const key of ['loading', 'setup', 'empty', 'app']) {
     el(key + '-view').hidden = key !== name;
   }
 }
@@ -77,6 +77,7 @@ const TYPE_LABELS = {
  * 画面の状態。
  * @type {{
  *   uid: string,
+ *   mode: 'local' | 'cloud',
  *   candidates: any[],
  *   currentId: string,
  *   posters: Record<string, *>[],
@@ -89,7 +90,8 @@ const TYPE_LABELS = {
  * }}
  */
 const state = {
-  uid: '', candidates: [], currentId: '',
+  // mode は保存先。'local' は端末の中だけ、'cloud' はアカウント（同期あり）
+  uid: '', mode: 'local', candidates: [], currentId: '',
   posters: [], unwatch: null,
   sortKey: 'no', sortDir: 'asc', filters: emptyFilters(),
   editingId: null, draft: null,
@@ -117,34 +119,366 @@ function lastCandidateKey(uid) {
 }
 
 async function start() {
-  /** @type {typeof import('./auth.js')} */
-  let auth;
+  // 端末内保存で立ち上げる。
+  // ログインは「複数の端末で同じデータを見る」ためのもので、使用の条件ではない。
+  const { createLocalDb, LOCAL_UID } = await import('./local-db.js');
+  const { createIdbStorage, clearLocalData } = await import('./idb.js');
+
+  const localDb = createLocalDb(createIdbStorage());
+
+  /**
+   * いま使っている保存先。ログインの前後で差し替える。
+   * 画面側はこの変数しか見ないため、切り替えても呼び出し方は変わらない。
+   * @type {*}
+   */
+  let db = localDb;
+
+  state.uid = LOCAL_UID;
+  state.mode = 'local';
+
+  /**
+   * ログインを試みたことがある端末かどうかの印。
+   *
+   * 「成功したか」ではなく「試みたか」で付ける。
+   * 遷移方式のログインは Google の画面へ飛んで戻ってくる間にページが読み直される。
+   * 成功したときに付ける作りだと、戻ってきた時点ではまだ印が無いため
+   * 認証を読み込まず、ログインしたのに端末内保存のままになる。
+   */
+  const SIGNED_IN_KEY = 'poster-app:has-signed-in';
+
+  /** @type {typeof import('./auth.js') | null} */
+  let auth = null;
+  /** @type {typeof import('./db.js') | null} */
+  let cloudDb = null;
+  /** @type {{authDomain?: string} | null} */
+  let firebaseConfig = null;
+  /** 取り込みの案内を閉じたか（この表示のあいだだけ覚える） */
+  let migrateDismissed = false;
+
+  // 接続設定が置かれているかだけを先に確かめる。
+  // firebase-config.js は値の入れ物で SDK を読み込まないため、
+  // ここを読んでも Firebase への通信は起きない
+  let canSignIn = false;
   try {
-    auth = await import('./auth.js');
-  } catch (error) {
-    el('setup-error-text').textContent = toMessage(error);
-    showView('setup');
-    return;
+    ({ firebaseConfig } = await import('./firebase-config.js'));
+    canSignIn = true;
+  } catch {
+    // 設定が無い環境では同期が使えないだけ。端末内保存でそのまま使える
+    canSignIn = false;
   }
 
-  const { firebaseConfig } = await import('./firebase-config.js');
-  const db = await import('./db.js');
+  /**
+   * 認証と Firestore を読み込む。一度だけ行う。
+   *
+   * ログインしたことがない端末ではこの関数が呼ばれず、
+   * Firebase SDK の読み込み自体が起きない。圏外でも起動できる。
+   *
+   * @returns {Promise<{ok: boolean, message: string}>}
+   */
+  async function loadFirebase() {
+    if (auth !== null) return { ok: true, message: '' };
+    if (!canSignIn) {
+      return { ok: false, message: 'この配信環境には Firebase の接続設定がありません。同期は使えません。' };
+    }
 
-  const redirect = await auth.handleRedirectResult();
-  if (!redirect.ok) showError('signin-error', 'signin-error-text', redirect.message);
+    try {
+      const loadedAuth = await import('./auth.js');
+      cloudDb = await import('./db.js');
+      auth = loadedAuth;
 
-  if (auth.signInMethod === 'blocked') {
-    el('domain-warning').hidden = false;
-    /** @type {HTMLButtonElement} */ (el('signin-button')).disabled = true;
+      // 遷移方式で戻ってきた場合の結果を先に受け取る
+      const redirect = await loadedAuth.handleRedirectResult();
+
+      if (loadedAuth.signInMethod === 'blocked') el('domain-warning').hidden = false;
+
+      // 最初の状態が分かるまで待つ。待たずに進むと、ログイン済みの端末で
+      // 一瞬だけ「この端末に保存中」と表示されてから切り替わる
+      await new Promise((resolve) => {
+        let settled = false;
+        loadedAuth.observeUser((user) => {
+          void onUserChanged(user);
+          if (!settled) {
+            settled = true;
+            resolve(undefined);
+          }
+        });
+      });
+
+      return redirect.ok ? { ok: true, message: '' } : { ok: false, message: redirect.message };
+    } catch (error) {
+      auth = null;
+      cloudDb = null;
+      return { ok: false, message: '同期の準備ができませんでした（' + toMessage(error) + '）' };
+    }
   }
 
-  el('signin-button').addEventListener('click', async () => {
+  /**
+   * ログイン状態が変わったときに保存先を切り替える。
+   *
+   * @param {*} user ログインしていなければ null
+   * @returns {Promise<void>}
+   */
+  async function onUserChanged(user) {
+    stopWatching();
+    state.candidates = [];
+    state.currentId = '';
+    state.posters = [];
+
+    if (user === null) {
+      db = localDb;
+      state.uid = LOCAL_UID;
+      state.mode = 'local';
+      el('migrate-notice').hidden = true;
+    } else {
+      db = cloudDb;
+      state.uid = user.uid;
+      state.mode = 'cloud';
+      localStorage.setItem(SIGNED_IN_KEY, '1');
+      el('user-name').textContent = user.email ?? user.displayName ?? '';
+    }
+
+    renderAccountArea();
+    await reloadSafely();
+
+    if (user !== null && !migrateDismissed) await offerMigration();
+  }
+
+  /**
+   * 台帳を読み直す。失敗したときは原因を画面に出す。
+   * @returns {Promise<void>}
+   */
+  async function reloadSafely() {
+    showView('loading');
+    showTab('list');
+    try {
+      await reload();
+    } catch (error) {
+      el('setup-error-text').textContent = toMessage(error);
+      showView('setup');
+    }
+  }
+
+  /**
+   * ヘッダと診断表示を、いまの保存先に合わせて描く。
+   * @returns {void}
+   */
+  function renderAccountArea() {
+    const cloud = state.mode === 'cloud';
+
+    el('local-badge').hidden = cloud;
+    /** @type {HTMLButtonElement} */ (el('signin-button')).hidden = cloud || !canSignIn;
+    el('user-name').hidden = !cloud;
+    el('signout-button').hidden = !cloud;
+
+    el('diagnostics').textContent = cloud
+      ? '配信元 ' + location.hostname
+        + '／認証 ' + (firebaseConfig?.authDomain ?? '—')
+        + '／方式 ' + (auth?.signInMethod ?? '—')
+      : '配信元 ' + location.hostname + '／保存先 この端末（IndexedDB）';
+
+    void renderStoragePanel();
+  }
+
+  /**
+   * 端末内に残っているデータの量を数える。
+   * @returns {Promise<{candidates: number, posters: number}>}
+   */
+  async function countLocalData() {
+    try {
+      const candidates = await localDb.listCandidates(LOCAL_UID, { includeArchived: true });
+
+      let posters = 0;
+      for (const candidate of candidates) {
+        posters += await localDb.countPosters(LOCAL_UID, candidate.id);
+      }
+
+      return { candidates: candidates.length, posters };
+    } catch {
+      // 端末内保存が使えない環境。ここで止める理由は無いので0として扱う
+      return { candidates: 0, posters: 0 };
+    }
+  }
+
+  /**
+   * 設定タブの「データの保存先」を描く。
+   * @returns {Promise<void>}
+   */
+  async function renderStoragePanel() {
+    const cloud = state.mode === 'cloud';
+    const local = await countLocalData();
+
+    el('storage-mode-text').textContent = cloud
+      ? 'ログイン中です。データはアカウントに保存され、'
+        + '同じアカウントでログインした端末すべてで自動的に同期されます。'
+      : 'ログインしていません。データはこの端末の中だけに保存されています。'
+        + '他の端末には表示されず、ブラウザのデータを消すと失われます。'
+        + 'ログインすると、複数の端末で同じ台帳を見られるようになります。';
+
+    el('storage-signin').hidden = cloud || !canSignIn;
+    el('storage-migrate').hidden = !cloud || local.candidates === 0;
+    el('storage-clear').hidden = !cloud || local.candidates === 0;
+  }
+
+  /**
+   * ログイン直後に、端末内のデータを取り込むか尋ねる。
+   * 黙って移さないのは、アカウント側に同じ名前の台帳がある場合に
+   * どちらが正しいかを機械では決められないため。
+   *
+   * @returns {Promise<void>}
+   */
+  async function offerMigration() {
+    const local = await countLocalData();
+
+    if (local.candidates === 0) {
+      el('migrate-notice').hidden = true;
+      return;
+    }
+
+    el('migrate-notice-text').textContent =
+      'ログインせずに作った台帳が' + local.candidates + '件'
+      + '（掲示場所' + local.posters + '件）この端末に残っています。'
+      + 'アカウントに取り込むと、他の端末でも見られるようになります。';
+    el('migrate-notice').hidden = false;
+  }
+
+  /**
+   * 端末内のデータをアカウントへ取り込む。
+   * @returns {Promise<void>}
+   */
+  async function runMigrationNow() {
+    if (state.mode !== 'cloud' || cloudDb === null) return;
+
+    const local = await countLocalData();
+    if (local.candidates === 0) return;
+
+    if (!window.confirm(
+      'この端末に保存されている台帳' + local.candidates + '件を、'
+      + 'いまログインしているアカウントに取り込みます。\n\n'
+      + '・新しい台帳として追加します（アカウント側の既存の台帳は変わりません）\n'
+      + '・同じ名前の台帳がある場合は、名前に印を付けて区別します\n'
+      + '・取り込んだ後も、この端末のデータは残ります\n\n'
+      + 'よろしいですか？',
+    )) return;
+
+    const button = /** @type {HTMLButtonElement} */ (el('storage-migrate'));
+    button.disabled = true;
+    showError('storage-error', 'storage-error-text', '');
+
+    try {
+      const { runMigration } = await import('./migrate.js');
+
+      const result = await runMigration(localDb, cloudDb, state.uid, (progress) => {
+        el('migrate-notice-text').textContent =
+          '取り込んでいます… ' + progress.done + '/' + progress.total + '（' + progress.name + '）';
+      });
+
+      el('migrate-notice').hidden = true;
+      migrateDismissed = true;
+
+      el('storage-done-text').textContent =
+        '台帳' + result.candidates + '件・掲示場所' + result.posters + '件を取り込みました。'
+        + 'この端末のデータはそのまま残しています。'
+        + '確認できたら「端末内のデータを消す」で片付けられます。';
+      el('storage-done').hidden = false;
+
+      await reloadSafely();
+    } catch (error) {
+      el('migrate-notice').hidden = true;
+      showError('storage-error', 'storage-error-text',
+        '取り込みに失敗しました（' + toMessage(error) + '）。'
+        + '端末内のデータは残っているので、もう一度お試しください。');
+      showTab('settings');
+    } finally {
+      button.disabled = false;
+      void renderStoragePanel();
+    }
+  }
+
+  /**
+   * 端末内のデータを消す。取り消せない。
+   * @returns {Promise<void>}
+   */
+  async function clearLocalNow() {
+    const local = await countLocalData();
+    if (local.candidates === 0) return;
+
+    if (!window.confirm(
+      'この端末に保存されている台帳' + local.candidates + '件'
+      + '（掲示場所' + local.posters + '件）を消します。\n'
+      + 'アカウント側のデータは消えません。\n\n'
+      + 'この操作は取り消せません。よろしいですか？',
+    )) return;
+
+    // 取り消せない操作なので二度尋ねる
+    if (!window.confirm('本当に消してよろしいですか？')) return;
+
+    try {
+      showError('storage-error', 'storage-error-text', '');
+      await clearLocalData();
+
+      el('storage-done-text').textContent = 'この端末に保存されていたデータを消しました。';
+      el('storage-done').hidden = false;
+      el('migrate-notice').hidden = true;
+    } catch (error) {
+      showError('storage-error', 'storage-error-text', toMessage(error));
+    } finally {
+      void renderStoragePanel();
+    }
+  }
+
+  /**
+   * ログインを始める。押されたときに初めて Firebase を読み込む。
+   * @returns {Promise<void>}
+   */
+  async function startSignIn() {
     showError('signin-error', 'signin-error-text', '');
-    const result = await auth.startSignIn();
-    if (!result.ok) showError('signin-error', 'signin-error-text', result.message);
+
+    const loaded = await loadFirebase();
+    if (!loaded.ok) {
+      showError('signin-error', 'signin-error-text', loaded.message);
+      return;
+    }
+
+    // 既にログイン済みだった場合（読み込みの中で切り替わっている）
+    if (state.mode === 'cloud') return;
+
+    // 遷移方式では次の行から戻ってこない。飛ぶ前に印を付ける
+    localStorage.setItem(SIGNED_IN_KEY, '1');
+
+    const result = await /** @type {*} */ (auth).startSignIn();
+    if (!result.ok) {
+      showError('signin-error', 'signin-error-text', result.message);
+      // 同期の準備自体ができないなら印を残さない。
+      // 残すと、以後この端末は毎回 Firebase を読みに行くだけになる
+      if (state.mode !== 'cloud') localStorage.removeItem(SIGNED_IN_KEY);
+    }
+  }
+
+  el('signin-button').addEventListener('click', () => void startSignIn());
+  el('storage-signin').addEventListener('click', () => void startSignIn());
+
+  el('signout-button').addEventListener('click', () => {
+    if (!window.confirm(
+      'ログアウトすると、アカウントに保存された台帳は表示されなくなります。\n'
+      + '（データは消えません。ログインし直せば元に戻ります）\n\n'
+      + 'よろしいですか？',
+    )) return;
+    localStorage.removeItem(SIGNED_IN_KEY);
+    void /** @type {*} */ (auth)?.doSignOut();
   });
 
-  el('signout-button').addEventListener('click', () => void auth.doSignOut());
+  el('migrate-run').addEventListener('click', () => void runMigrationNow());
+  el('storage-migrate').addEventListener('click', () => void runMigrationNow());
+  el('storage-clear').addEventListener('click', () => void clearLocalNow());
+
+  el('migrate-later').addEventListener('click', () => {
+    migrateDismissed = true;
+    el('migrate-notice').hidden = true;
+    el('storage-done-text').textContent =
+      '端末内のデータはそのまま残しています。'
+      + 'この画面の「端末内のデータをアカウントに取り込む」からいつでも取り込めます。';
+    el('storage-done').hidden = false;
+  });
 
   // ================================================================ タブ
 
@@ -439,6 +773,15 @@ async function start() {
    */
   function renderSyncBar() {
     const bar = el('sync-bar');
+
+    // 端末内保存のときは同期そのものが無い。
+    // ここで「オフライン」と出すと、通信の不具合だと誤解させる。
+    // 保存先はヘッダの「この端末に保存中」が伝えている
+    if (state.mode === 'local') {
+      bar.hidden = true;
+      return;
+    }
+
     const offline = navigator.onLine === false;
 
     if (offline) {
@@ -2432,35 +2775,20 @@ async function start() {
 
   // ================================================================ 起動
 
-  auth.observeUser(async (user) => {
-    if (user === null) {
-      stopWatching();
-      state.uid = '';
-      state.candidates = [];
-      el('user-area').hidden = true;
-      el('candidate-area').hidden = true;
-      showView('signin');
-      return;
-    }
+  renderAccountArea();
 
-    state.uid = user.uid;
-    el('user-name').textContent = user.email ?? user.displayName ?? '';
-    el('user-area').hidden = false;
+  // 一度でもログインしたことのある端末だけ、認証を読み込んで状態を引き継ぐ。
+  // そうでなければ Firebase に一切触れずに端末内保存で立ち上がる。
+  // ここが「ログインしなくても使える」の実体で、圏外でも起動できる。
+  if (localStorage.getItem(SIGNED_IN_KEY) === '1' && canSignIn) {
+    const loaded = await loadFirebase();
+    if (!loaded.ok) showError('signin-error', 'signin-error-text', loaded.message);
 
-    el('diagnostics').textContent =
-      '配信元 ' + location.hostname +
-      '／認証 ' + firebaseConfig.authDomain +
-      '／方式 ' + auth.signInMethod;
+    // 読み込めた場合、表示は onUserChanged が済ませている
+    if (auth !== null) return;
+  }
 
-    showView('loading');
-    showTab('list');
-    try {
-      await reload();
-    } catch (error) {
-      el('setup-error-text').textContent = toMessage(error);
-      showView('setup');
-    }
-  });
+  await reloadSafely();
 }
 
 void start();

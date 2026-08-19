@@ -31,15 +31,46 @@
     <label class="app-header__label" for="candidate-select">候補者</label>
     <select id="candidate-select" class="select"></select>
   </div>
-  <div class="app-header__user" id="user-area" hidden>
-    <span id="user-name"></span>
-    <button type="button" class="button button--quiet" id="signout-button">ログアウト</button>
+  <div class="app-header__user" id="user-area">
+    <!-- ログインしていないとき。ログインは「同期のため」であって使用の条件ではない -->
+    <span class="app-header__mode" id="local-badge">この端末に保存中</span>
+    <button type="button" class="button button--quiet" id="signin-button">ログインして同期</button>
+
+    <!-- ログインしているとき -->
+    <span id="user-name" hidden></span>
+    <button type="button" class="button button--quiet" id="signout-button" hidden>ログアウト</button>
   </div>
 </header>
 
 <div class="syncbar" id="sync-bar" hidden>
   <span class="syncbar__label" id="sync-label"></span>
   <span id="sync-text"></span>
+</div>
+
+<!-- ログインまわりの知らせ。画面を占有せず、使いながら読めるようにする -->
+<div class="app-notice">
+  <div class="notice notice--error" id="signin-error" hidden>
+    <span class="notice__label">ログイン</span>
+    <span id="signin-error-text"></span>
+  </div>
+
+  <div class="notice notice--warn" id="domain-warning" hidden>
+    <span class="notice__label">この端末では同期できません</span>
+    <span>
+      配信元とFirebaseのドメインが異なるため、iPhone・iPadではログインが完了しません。
+      Firebase Hosting のURLから開き直してください。
+      <strong>ログインしなくても、この端末に保存して使えます。</strong>
+    </span>
+  </div>
+
+  <div class="notice notice--info" id="migrate-notice" hidden>
+    <span class="notice__label">この端末に保存されたデータ</span>
+    <span id="migrate-notice-text"></span>
+    <span class="app-notice__actions">
+      <button type="button" class="button button--primary" id="migrate-run">アカウントに取り込む</button>
+      <button type="button" class="button button--quiet" id="migrate-later">あとで</button>
+    </span>
+  </div>
 </div>
 
 <main class="app-main">
@@ -49,42 +80,12 @@
     <p class="text-sub">読み込んでいます…</p>
   </section>
 
-  <!-- 未ログイン -->
-  <section class="panel" id="signin-view" hidden>
-    <h2>ログイン</h2>
-    <p>
-      ポスターの掲示場所を管理します。
-      Googleアカウントごとに独立した台帳を持ち、他の方のデータは表示されません。
-    </p>
-
-    <p>
-      <button type="button" class="button button--primary" id="signin-button">
-        Googleアカウントでログイン
-      </button>
-    </p>
-
-    <div class="notice notice--error" id="signin-error" hidden>
-      <span class="notice__label">エラー</span>
-      <span id="signin-error-text"></span>
-    </div>
-
-    <div class="notice notice--warn" id="domain-warning" hidden>
-      <span class="notice__label">この端末ではログインできません</span>
-      <span>
-        配信元とFirebaseのドメインが異なるため、iPhone・iPadではログインが完了しません。
-        Firebase Hosting のURLから開き直してください。
-      </span>
-    </div>
-  </section>
-
   <!-- 設定漏れ -->
   <section class="panel" id="setup-view" hidden>
-    <h2>初期設定が終わっていません</h2>
+    <h2>データを読み込めませんでした</h2>
     <p>
-      Firebase の接続設定が読み込めませんでした。
-      <code>public/js/firebase-config.example.js</code> を
-      <code>firebase-config.js</code> という名前で複製し、
-      Firebase コンソールの値を貼り付けてください。
+      台帳の読み込みに失敗しました。通信の状態を確かめて、画面を開き直してください。
+      それでも直らない場合は、下の詳細をお知らせください。
     </p>
     <div class="notice notice--error">
       <span class="notice__label">詳細</span>
@@ -97,6 +98,13 @@
     <h2>最初の候補者を登録してください</h2>
     <p class="text-sub">
       候補者ごとに独立した台帳を持ちます。あとから何人でも追加・切り替えできます。
+    </p>
+    <p class="text-sub">
+      <strong>ログインしなくてもそのまま使えます。</strong>
+      入力したデータはこの端末の中に保存されます。
+      パソコンとスマートフォンなど複数の端末で同じ台帳を見たいときに、
+      右上の「ログインして同期」を使ってください。
+      ログインの前に入力したデータは、あとからアカウントに取り込めます。
     </p>
     <div class="field">
       <label class="field__label" for="first-candidate-name">候補者名</label>
@@ -342,6 +350,32 @@
           <dt>掲示場所</dt><dd id="fact-posters">—</dd>
           <dt>列の数</dt><dd id="fact-columns">—</dd>
         </dl>
+      </div>
+
+      <div class="panel">
+        <h2>データの保存先</h2>
+        <p id="storage-mode-text" class="text-sub">—</p>
+
+        <div class="row">
+          <button type="button" class="button button--primary" id="storage-signin" hidden>
+            ログインして同期する
+          </button>
+          <button type="button" class="button button--quiet" id="storage-migrate" hidden>
+            端末内のデータをアカウントに取り込む
+          </button>
+          <button type="button" class="button button--quiet" id="storage-clear" hidden>
+            端末内のデータを消す
+          </button>
+        </div>
+
+        <div class="notice notice--error" id="storage-error" hidden>
+          <span class="notice__label">エラー</span><span id="storage-error-text"></span>
+        </div>
+
+        <div class="notice notice--info" id="storage-done" hidden>
+          <span class="notice__label">完了</span><span id="storage-done-text"></span>
+        </div>
+
         <p class="text-sub" id="diagnostics"></p>
       </div>
 

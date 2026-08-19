@@ -216,6 +216,21 @@ export async function countPosters(uid, candidateId) {
 // ------------------------------------------------------------------ ポスター
 
 /**
+ * ある候補者のポスターを全件取り出す。
+ *
+ * 画面は watchPosters で受け取るので普段は使わないが、
+ * 端末内保存（local-db.js）と関数の並びを揃えておく。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @returns {Promise<Record<string, *>[]>}
+ */
+export async function listPosters(uid, candidateId) {
+  const snapshot = await getDocs(postersRef(uid, candidateId));
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/**
  * ポスターの変化を見張る。端末をまたいだ同期はこれで実現している。
  *
  * onSnapshot は「取りに行く」のではなく「変わったら教えてもらう」形なので、
@@ -281,6 +296,9 @@ export async function savePoster(uid, candidateId, posterId, poster) {
   const { id, createdAt, ...rest } = poster;
   await setDoc(doc(postersRef(uid, candidateId), posterId), {
     ...rest,
+    // 置き換えなので、書かない項目は消える。
+    // createdAt は「最初に登録した日」なので保存のたびに引き継ぐ
+    ...(createdAt === undefined ? {} : { createdAt }),
     updatedAt: serverTimestamp(),
     updatedBy: uid,
   }, { merge: false });

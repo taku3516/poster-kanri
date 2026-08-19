@@ -56,7 +56,8 @@ export async function startSignIn() {
       ok: false,
       message:
         'この端末（iPhone・iPad）では、配信元とFirebaseのドメインが違うためログインできません。' +
-        'Firebase Hosting の URL から開き直してください。',
+        'Firebase Hosting の URL から開き直してください。' +
+        'なお、ログインしなくてもこの端末に保存して使えます（他の端末とは同期されません）。',
     };
   }
 

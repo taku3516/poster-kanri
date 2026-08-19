@@ -17,12 +17,41 @@ poster-app/
     js/
       sign-in-method.js    ログイン方式の判定（純粋関数・テスト対象）
       auth.js              Firebase 認証
+      db.js                Firestore への読み書き（ログイン時の保存先）
+      local-db.js          端末内への読み書き（未ログイン時の保存先）
+      idb.js               IndexedDB の薄い包み
+      migrate.js           端末内 → アカウントへの取り込み
       main.js              画面の制御
       firebase-config.js   接続設定（.gitignore 済み。各自で作る）
   test/              node:test によるテスト
   firebase.json      Hosting の設定
   firestore.rules    セキュリティルール
 ```
+
+## ログインしなくても使える
+
+**ログインは「複数の端末で同じ台帳を見る」ためのもので、使用の条件ではない。**
+
+| 状態 | 保存先 | 見え方 |
+|---|---|---|
+| ログインしていない | この端末の中（IndexedDB） | 全機能が使える。他の端末には表示されない |
+| ログインしている | Firestore | 同じアカウントの端末すべてで自動的に同期される |
+
+一度もログインしたことがない端末では、**Firebase SDK を読み込まない**。
+`localStorage` の印を見て、必要なときだけ `auth.js` / `db.js` を動的に読み込む。
+圏外でもアカウントが無くても起動できる。
+
+`db.js`（Firestore）と `local-db.js`（端末内）は**同じ関数の並び**を持つ。
+`main.js` は変数1つを差し替えるだけで保存先を切り替えており、
+28箇所ある呼び出しはどちらでも同じ書き方で動く。
+
+ログインすると、端末内にデータがある場合だけ取り込みを尋ねる。
+取り込みは常に**新しい台帳を足す形**で行い、アカウント側の既存の台帳は変更しない。
+取り込んだ後も端末内のデータは残る（設定画面から消せる）。
+
+`local-db.js` は「保存の入れ物」を外から受け取る作りにしてあるため、
+Node に IndexedDB が無くてもメモリ上の入れ物を差し込んでテストできる
+（`test/memory-storage.js`）。
 
 ## なぜ GitHub Pages ではないのか
 
@@ -37,12 +66,21 @@ WebKit のストレージ分割によりログインが完了しない。iOS 版
 
 ```bash
 cd poster-app
-cp public/js/firebase-config.example.js public/js/firebase-config.js
-# firebase-config.js に Firebase コンソールの値を貼り付ける
-python3 -m http.server 8080 --directory public
+npm start
 ```
 
-`http://localhost:8080` を開く。
+`http://localhost:8080` を開く。`npm start` はキャッシュを持たせない簡易サーバ
+（`tools/serve.py`）を使う。本番も no-cache なので、手元だけキャッシュが効いて
+「直したのに反映されない」という現象が起きないようにしてある。
+
+**Firebase の設定が無くても、端末内保存で全機能を試せる。**
+同期まで確認したい場合だけ、接続設定を置く。
+
+```bash
+cp public/js/firebase-config.example.js public/js/firebase-config.js
+# firebase-config.js に Firebase コンソールの値を貼り付ける
+```
+
 `localhost` は Firebase の承認済みドメインに最初から入っている。
 
 ## テスト

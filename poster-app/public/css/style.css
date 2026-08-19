@@ -228,6 +228,37 @@ p:last-child { margin-bottom: 0; }
 .notice--info { border-left-color: var(--blue); }
 .notice--info .notice__label { color: var(--blue); }
 
+/*
+ * 画面の上に出す知らせ（ログイン・取り込み）。
+ * ログインは使用の条件ではないので、画面を占有させずに帯で伝える。
+ */
+.app-notice {
+  padding: 0 var(--space-4);
+}
+
+.app-notice .notice {
+  margin-top: var(--space-3);
+}
+
+.app-notice__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-left: var(--space-3);
+}
+
+/* 保存先の表示。ログイン状態と紛らわしくならないよう控えめにする */
+.app-header__mode {
+  padding: 2px var(--space-2);
+  font-size: 12px;
+  color: var(--gray-600);
+  background: var(--gray-100);
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.app-header__mode[hidden] { display: none; }
+
 /* ------------------------------------------------------------------ */
 /* 定義リスト（状態の表示）                                              */
 /* ------------------------------------------------------------------ */

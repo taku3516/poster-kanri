@@ -24,3 +24,6 @@ poster-app/data/
 /index.html
 /shinagawa_map.py
 /shinagawa_map.png
+
+# Claude Code の作業用（ワークツリー・プレビュー設定）
+/.claude/
