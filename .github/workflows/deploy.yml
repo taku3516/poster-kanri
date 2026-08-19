@@ -55,13 +55,37 @@ jobs:
           fi
           printf 'export const firebaseConfig = %s;\n' "$WEB_CONFIG" \
             > public/js/firebase-config.js
+
+          # 値そのものを検査する。
+          # 「項目があるか」だけを見ていたため、apiKey に伏せ字（•）が
+          # 混入したまま配信し、auth/api-key-not-valid で気付いた経緯がある。
+          # 画面に伏せ字で表示された値をコピーして登録すると起こる。
+          # 配信してから実機で気付くのでは遅い。ここで止める。
           node --input-type=module \
             -e "import('./public/js/firebase-config.js').then(m => {
-                  if (!m.firebaseConfig?.authDomain) {
-                    console.error('authDomain がありません');
-                    process.exit(1);
+                  const c = m.firebaseConfig;
+                  const need = ['apiKey', 'authDomain', 'projectId', 'appId'];
+                  const fail = (msg) => { console.error('::error::' + msg); process.exit(1); };
+
+                  for (const k of need) {
+                    if (!c?.[k]) fail('接続設定に ' + k + ' がありません');
                   }
-                  console.log('authDomain:', m.firebaseConfig.authDomain);
+
+                  // 伏せ字・全角・空白の混入を捕まえる。
+                  // ASCII の印字可能文字だけで構成されているはず
+                  for (const [k, v] of Object.entries(c)) {
+                    if (typeof v !== 'string') continue;
+                    if (!/^[\x21-\x7e]+$/.test(v)) {
+                      fail(k + ' に使えない文字が入っています（伏せ字や全角が混じっていませんか）');
+                    }
+                  }
+
+                  // Firebase の API キーは AIza で始まる39文字
+                  if (!/^AIza[0-9A-Za-z_-]{35}$/.test(c.apiKey)) {
+                    fail('apiKey の形が違います（' + c.apiKey.length + '文字。正しくは39文字）');
+                  }
+
+                  console.log('接続設定を確認しました authDomain:', c.authDomain);
                 })"
 
       - name: 認証情報を書き出す
