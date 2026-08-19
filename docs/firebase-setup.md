@@ -132,6 +132,59 @@ localhost
 <ID>.web.app
 ```
 
+### URLから数字を消したい場合（別名サイトを使う）— 2026-08-19に実施
+
+プロジェクトIDには作成時に数字が付くことがあり（`poster-kanri-94627`）、
+**プロジェクトIDは後から変更できません**。
+しかし Hosting は1つのプロジェクトに**複数のサイト**を持て、
+サイト名は空いていれば自由に付けられます。
+
+このプロジェクトでは `poster-kanri` というサイトを追加し、
+`https://poster-kanri.firebaseapp.com` で配信しています。
+
+```
+アプリのURL   https://poster-kanri.firebaseapp.com
+authDomain    poster-kanri.firebaseapp.com     ← 手順2の値から書き換える
+projectId     poster-kanri-94627               ← ここは変えない。別物
+```
+
+**この場合、①②の両方を手で登録する必要があります。**
+自動で入るのは既定サイト（`<ID>.firebaseapp.com`）の分だけです。
+
+| 必要な登録 | 場所 | 別名サイトは |
+|---|---|---|
+| ① 承認済みドメイン | Firebase → Authentication → Settings | ❌ 手で足す |
+| ② 承認済みリダイレクト URI | Google Cloud → OAuthクライアント | ❌ 手で足す |
+
+**手順**
+
+```bash
+# 1. サイトを作る（名前はグローバルに一意。空いていなければ別名にする）
+firebase hosting:sites:create poster-kanri --project poster-kanri-94627
+```
+
+2. `firebase.json` の `hosting` を配列にし、`"site": "poster-kanri"` を書く
+   （旧URLは転送だけを置く。放置すると古い版を使い続ける人が出て、
+   そちらの端末内保存にデータが溜まってしまう。**入口は1つに絞る**）
+3. Firebase → Authentication → Settings → 承認済みドメインに
+   `poster-kanri.firebaseapp.com` を追加
+4. https://console.cloud.google.com/apis/credentials →
+   `Web client (auto created by Google Service)` →
+   「承認済みのリダイレクト URI」に次を追加
+
+```
+https://poster-kanri.firebaseapp.com/__/auth/handler
+```
+
+5. `firebase-config.js` の `authDomain` を `poster-kanri.firebaseapp.com` に変える
+6. GitHub のシークレット `FIREBASE_WEB_CONFIG` の `authDomain` も同じ値に変える
+   （**これを忘れると本番だけ古い値のままになる**）
+
+> **注意**: URLが変わると、ログインしないで使っていたときの
+> 端末内データ（IndexedDB）は別物として扱われ、新URLからは見えません。
+> オリジン（URL）単位で隔離されるためです。
+> **URLを変えるなら、実データを入れる前に行うこと。**
+
 ---
 
 ## 手順5. Firestore を作る
