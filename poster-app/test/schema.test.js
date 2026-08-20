@@ -145,3 +145,38 @@ test('表示する列は並び順に並び、非表示は除かれる', () => {
     assert.ok(shown[i - 1].order <= shown[i].order, '並び順が崩れている');
   }
 });
+
+// ---------------------------------------------- 後から増えた固定項目の補完
+
+test('保存済みの列定義に、後から増えた固定項目を足す', async () => {
+  // 列定義は候補者ごとに保存される。固定項目を足しても、
+  // 既にある台帳には現れない。読むときに補う。
+  const { withSystemColumns, defaultColumns } = await import('../public/js/schema.js');
+  const stored = defaultColumns().filter((c) => c.key !== 'replaceCount');
+
+  const merged = withSystemColumns(stored);
+  const added = merged.find((c) => c.key === 'replaceCount');
+
+  assert.notEqual(added, undefined);
+  assert.equal(merged.length, stored.length + 1);
+});
+
+test('補完しても、利用者が変えた表示名や並びは保たない対象に触らない', async () => {
+  const { withSystemColumns, defaultColumns, renameColumn } = await import('../public/js/schema.js');
+  const stored = renameColumn(defaultColumns(), 'owner', '貸主');
+
+  const merged = withSystemColumns(stored);
+  assert.equal(merged.find((c) => c.key === 'owner').label, '貸主');
+});
+
+test('足す列は末尾に置く（既存の並びを崩さない）', async () => {
+  const { withSystemColumns, defaultColumns, addCustomColumn } = await import('../public/js/schema.js');
+  const stored = addCustomColumn(
+    defaultColumns().filter((c) => c.key !== 'replaceCount'),
+    { label: '回覧板担当', type: 'text' },
+  );
+
+  const merged = withSystemColumns(stored);
+  const added = merged.find((c) => c.key === 'replaceCount');
+  assert.ok(added.order > Math.max(...stored.map((c) => c.order)));
+});

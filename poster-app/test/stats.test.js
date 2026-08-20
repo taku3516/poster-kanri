@@ -270,3 +270,74 @@ test('所有者が空のものは数えない', async () => {
   const { byOwner } = await import('../public/js/stats.js');
   assert.equal(byOwner([p({ owner: '' }), p({ owner: '' })]).length, 0);
 });
+
+test('同じ場所を複数回貼り替えた実績が、それぞれの月に残る', async () => {
+  // 従来は最新の1件しか持たなかったため、貼り替えるたびに
+  // 過去の月の棒が減っていた。履歴を数えることで過去が動かなくなる。
+  const { monthlyReplacements } = await import('../public/js/stats.js');
+  const rows = monthlyReplacements([
+    p({ replacements: ['2026-06-10', '2026-08-01'], lastReplacedOn: '2026-08-01' }),
+  ], TODAY, 3);
+
+  const find = (m) => rows.find((r) => r.month === m);
+  assert.equal(find('2026-06').count, 1);
+  assert.equal(find('2026-08').count, 1);
+});
+
+test('撤去済の場所でも、過去に行った貼替の実績は残す', async () => {
+  // 実績は「その月に行った作業」。今どうなっているかで過去を書き換えない。
+  const { monthlyReplacements } = await import('../public/js/stats.js');
+  const rows = monthlyReplacements([
+    p({ lastReplacedOn: '2026-07-05', status: '撤去済' }),
+  ], TODAY, 3);
+
+  assert.equal(rows.find((r) => r.month === '2026-07').count, 1);
+});
+
+test('同じ月に2回貼り替えたら2件として数える', async () => {
+  const { monthlyReplacements } = await import('../public/js/stats.js');
+  const rows = monthlyReplacements([
+    p({ replacements: ['2026-08-01', '2026-08-20'], lastReplacedOn: '2026-08-20' }),
+  ], TODAY, 3);
+
+  assert.equal(rows.find((r) => r.month === '2026-08').count, 2);
+});
+
+// -------------------------------------------------------------- 貼替の回数
+
+test('貼替回数ごとの件数を数える', async () => {
+  const { replaceCountDistribution } = await import('../public/js/stats.js');
+  const rows = replaceCountDistribution([
+    p({ replacements: [] }),
+    p({ replacements: ['2024-01-01'] }),
+    p({ replacements: ['2024-01-01', '2025-01-01'] }),
+    p({ replacements: ['2024-01-01', '2025-01-01', '2026-01-01'] }),
+    p({ replacements: ['2023-01-01', '2024-01-01', '2025-01-01', '2026-01-01'] }),
+  ]);
+
+  const find = (label) => rows.find((r) => r.label === label);
+  assert.equal(find('0回').count, 1);
+  assert.equal(find('1回').count, 1);
+  assert.equal(find('2回').count, 1);
+  assert.equal(find('3回以上').count, 2);
+});
+
+test('0件の区分も並べる（該当が無いことが見えるように）', async () => {
+  const { replaceCountDistribution } = await import('../public/js/stats.js');
+  const rows = replaceCountDistribution([p({ replacements: ['2024-01-01'] })]);
+
+  assert.deepEqual(rows.map((r) => r.label), ['0回', '1回', '2回', '3回以上']);
+  assert.equal(rows[0].count, 0);
+});
+
+test('履歴を持たない既存データは、最新貼替日があれば1回と数える', async () => {
+  const { replaceCountDistribution } = await import('../public/js/stats.js');
+  const rows = replaceCountDistribution([p({ lastReplacedOn: '2025-01-01' })]);
+  assert.equal(rows.find((r) => r.label === '1回').count, 1);
+});
+
+test('撤去済の場所は数えない（いま管理している場所の話のため）', async () => {
+  const { replaceCountDistribution } = await import('../public/js/stats.js');
+  const rows = replaceCountDistribution([p({ replacements: [], status: '撤去済' })]);
+  assert.equal(rows.find((r) => r.label === '0回').count, 0);
+});

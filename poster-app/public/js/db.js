@@ -28,7 +28,7 @@ import {
   writeBatch,
 } from 'https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js';
 
-import { defaultColumns } from './schema.js';
+import { defaultColumns, withSystemColumns } from './schema.js';
 
 // 電波の届かない場所でも閲覧・編集できるようにする。
 // 現地でポスターを確認しながら使う道具なので、通信前提にはしない。
@@ -81,7 +81,7 @@ export async function listCandidates(uid, options = {}) {
     id: d.id,
     name: d.data().name ?? '(名称未設定)',
     archived: d.data().archived === true,
-    columns: d.data().columns ?? defaultColumns(),
+    columns: withSystemColumns(d.data().columns ?? defaultColumns()),
     colorRules: d.data().colorRules ?? [],
     activeRuleId: d.data().activeRuleId ?? '',
   }));
@@ -404,4 +404,37 @@ export async function updatePostersBulk(uid, candidateId, posterIds, patch) {
   }
 
   return posterIds.length;
+}
+
+/**
+ * 行ごとに違う内容を当てる。
+ *
+ * 貼替履歴のように「その行がいま何を持っているか」で書く内容が変わる更新は、
+ * 共通の patch では表せないため、行ごとの差分を受け取る。
+ *
+ * `local-db.js` と同じ関数の並びを保つこと。画面側は変数1つを
+ * 差し替えるだけで保存先を切り替えている。
+ *
+ * @param {string} uid
+ * @param {string} candidateId
+ * @param {{id: string, patch: Record<string, *>}[]} patches
+ * @returns {Promise<number>} 書き換えた件数
+ */
+export async function updatePostersEach(uid, candidateId, patches) {
+  const LIMIT = 400;
+  const ref = postersRef(uid, candidateId);
+
+  for (let start = 0; start < patches.length; start += LIMIT) {
+    const batch = writeBatch(db);
+    for (const { id, patch } of patches.slice(start, start + LIMIT)) {
+      batch.update(doc(ref, id), {
+        ...patch,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      });
+    }
+    await batch.commit();
+  }
+
+  return patches.length;
 }

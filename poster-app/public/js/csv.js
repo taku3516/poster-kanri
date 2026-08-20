@@ -13,6 +13,7 @@
 
 import { orderedColumns, CSV_COLUMN_KEYS } from './schema.js';
 import { posterValue } from './table.js';
+import { historyOf } from './replacements.js';
 
 /** チェックが「あり」を表す書き方。手元のExcelの揺れを吸収する */
 const TRUTHY = new Set(['○', '◯', '●', '〇', '1', 'はい', 'true', '✓', '✔', 'yes', 'y', 'o']);
@@ -115,6 +116,26 @@ export function csvColumns(columns) {
   return [...head, ...systemRest, ...custom];
 }
 
+/** 貼替履歴の列の見出しに使う語。取り込みでも同じ語で見分ける */
+export const HISTORY_PREFIX = '貼替';
+
+/**
+ * 貼替履歴の列の見出しを返す。
+ *
+ * CSVは平らな形式で入れ子を運べないため、履歴は列に開く。
+ * 列の数は、書き出す行の中で最も回数の多い行に合わせる。
+ * 一度も貼り替えていない台帳では1列も出さない（空列を並べても読みにくいだけ）。
+ *
+ * @param {Record<string, *>[]} posters
+ * @returns {string[]} ['貼替1', '貼替2', …]
+ */
+export function historyHeaders(posters) {
+  const max = (Array.isArray(posters) ? posters : [])
+    .reduce((m, poster) => Math.max(m, historyOf(poster).length), 0);
+
+  return Array.from({ length: max }, (_, i) => HISTORY_PREFIX + (i + 1));
+}
+
 /**
  * 1つの欄を書き出し用に整える。区切り文字・引用符・改行があれば引用する。
  * @param {string} text
@@ -134,16 +155,23 @@ function escapeField(text) {
  */
 export function buildCsv(posters, columns) {
   const cols = csvColumns(columns);
+  const history = historyHeaders(posters);
 
-  const lines = [cols.map((c) => escapeField(c.label)).join(',')];
+  const lines = [[...cols.map((c) => c.label), ...history].map(escapeField).join(',')];
 
   for (const poster of posters) {
-    lines.push(cols.map((column) => {
+    const values = cols.map((column) => {
       const value = posterValue(poster, column);
       if (column.type === 'check') return escapeField(toCheckValue(value));
       if (value === null || value === undefined) return '';
       return escapeField(String(value));
-    }).join(','));
+    });
+
+    // 回数の少ない行は右側が空欄になる。列数は全行で揃える
+    const dates = historyOf(poster);
+    for (let i = 0; i < history.length; i += 1) values.push(escapeField(dates[i] ?? ''));
+
+    lines.push(values.join(','));
   }
 
   return lines.join('\n');

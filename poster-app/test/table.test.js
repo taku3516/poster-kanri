@@ -158,3 +158,29 @@ test('カスタム列も検索の対象になる', () => {
 test('見つからなければ空を返す', () => {
   assert.equal(filterPosters(samples, columns, 'いない人').length, 0);
 });
+
+// ------------------------------------------------------------ 導出する列
+
+test('貼替回数は保存せず、履歴から数える', async () => {
+  // 保存すると片方だけ古くなったときに食い違う。読むたびに数える。
+  const { posterValue } = await import('../public/js/table.js');
+  const { defaultColumns } = await import('../public/js/schema.js');
+  const column = defaultColumns().find((c) => c.key === 'replaceCount');
+
+  assert.equal(posterValue({ replacements: ['2024-01-01', '2025-01-01'] }, column), 2);
+});
+
+test('履歴を持たない既存データは、最新貼替日があれば1回と数える', async () => {
+  const { posterValue } = await import('../public/js/table.js');
+  const { defaultColumns } = await import('../public/js/schema.js');
+  const column = defaultColumns().find((c) => c.key === 'replaceCount');
+
+  assert.equal(posterValue({ lastReplacedOn: '2025-01-01' }, column), 1);
+  assert.equal(posterValue({ lastReplacedOn: null }, column), 0);
+});
+
+test('貼替回数の列は直接は書けない', async () => {
+  const { defaultColumns } = await import('../public/js/schema.js');
+  const column = defaultColumns().find((c) => c.key === 'replaceCount');
+  assert.equal(column.readOnly, true);
+});

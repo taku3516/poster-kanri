@@ -7,6 +7,20 @@
 //
 // Firestore に依存しない純粋な関数だけを置く。
 
+import { historyOf } from './replacements.js';
+
+/**
+ * 保存せず、読むたびに導く列。
+ *
+ * 導出値を保存すると、書き忘れた経路があったときに片方だけ古くなり、
+ * 同じデータなのに列と列で食い違う。数えるだけの値は数える。
+ *
+ * @type {Record<string, (poster: Record<string, *>) => *>}
+ */
+const DERIVED = {
+  replaceCount: (poster) => historyOf(poster).length,
+};
+
 /**
  * ポスターから、その列の値を取り出す。
  * 固定項目は直下、カスタム列は custom 配下にある差を吸収する。
@@ -16,6 +30,9 @@
  * @returns {*}
  */
 export function posterValue(poster, column) {
+  const derive = DERIVED[column.key];
+  if (derive !== undefined) return derive(poster ?? {});
+
   return column.system ? poster[column.key] : poster?.custom?.[column.key];
 }
 

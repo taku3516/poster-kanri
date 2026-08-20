@@ -562,6 +562,30 @@ p:last-child { margin-bottom: 0; }
   padding: var(--space-4) var(--space-6);
 }
 
+/* 他の記録から数えている値。直せないことが分かるように色を落とす */
+.is-derived { color: var(--gray-600); }
+
+.form-grid__derived {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--gray-600);
+}
+
+/* 貼替の記録。操作の意味が違うので、保存・削除の並びとは分けて置く */
+.dialog__replace {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  border-top: var(--border);
+}
+
+.dialog__replace-note {
+  color: var(--gray-600);
+  font-size: 13px;
+}
+
 .dialog__actions {
   display: flex;
   align-items: center;

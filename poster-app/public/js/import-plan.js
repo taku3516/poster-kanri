@@ -7,7 +7,8 @@
 
 import { orderedColumns, createEmptyPoster } from './schema.js';
 import { parseValue } from './table.js';
-import { fromCheckValue } from './csv.js';
+import { fromCheckValue, HISTORY_PREFIX } from './csv.js';
+import { fromDates, correctLatest } from './replacements.js';
 
 /**
  * 取り込みの計画。
@@ -18,6 +19,7 @@ import { fromCheckValue } from './csv.js';
  * @property {string[]} unknownColumns 台帳に無い列
  * @property {string[]} duplicateNos CSVの中で重複した番号
  * @property {string[]} duplicateAddresses CSVの中で重複した掲示住所
+ * @property {string[]} historyConflicts 貼替の列と最新貼替日が食い違った番号
  * @property {string[]} errors 取り込めない理由
  * @property {boolean} blocked これが true なら取り込めない
  */
@@ -36,7 +38,7 @@ export function buildImportPlan(rows, posters, columns, mode) {
   const plan = {
     add: [], update: [], remove: [],
     unknownColumns: [], duplicateNos: [], duplicateAddresses: [],
-    errors: [], blocked: false,
+    historyConflicts: [], errors: [], blocked: false,
   };
 
   if (!Array.isArray(rows) || rows.length < 2) {
@@ -51,9 +53,26 @@ export function buildImportPlan(rows, posters, columns, mode) {
   const all = orderedColumns(columns, { includeHidden: true });
   const byLabel = new Map(all.map((c) => [c.label, c]));
 
+  // 貼替履歴の列。CSVは入れ子を運べないため、履歴は 貼替1 貼替2 … に開いてある。
+  // 台帳の列ではないので、通常の対応付けからは外す
+  const historyIndexes = header
+    .map((label, i) => ({ i, order: historyOrderOf(label) }))
+    .filter((x) => x.order !== null)
+    .sort((a, b) => a.order - b.order)
+    .map((x) => x.i);
+  const isHistory = new Set(historyIndexes);
+
   // 見出しの各欄が、台帳のどの列に当たるか
-  const mapping = header.map((label) => byLabel.get(label) ?? null);
-  plan.unknownColumns = header.filter((label, i) => label !== '' && mapping[i] === null);
+  // 導出する列（貼替回数など）は書き込めない。見出しにあっても対応付けない
+  const mapping = header.map((label, i) => {
+    if (isHistory.has(i)) return null;
+    const column = byLabel.get(label);
+    return column === undefined || column.readOnly === true ? null : column;
+  });
+  plan.unknownColumns = header.filter(
+    (label, i) => label !== '' && mapping[i] === null && !isHistory.has(i)
+      && !byLabel.has(label),
+  );
 
   const noIndex = header.indexOf('番号');
   if (noIndex === -1) {
@@ -113,6 +132,23 @@ export function buildImportPlan(rows, posters, columns, mode) {
       else base.custom[column.key] = value;
     });
 
+    if (historyIndexes.length > 0) {
+      // 履歴の列があれば、そちらが本体。最新貼替日は履歴から導き直す
+      const dates = historyIndexes
+        .map((columnIndex) => String(row[columnIndex] ?? '').trim())
+        .filter((text) => text !== '');
+
+      const change = fromDates(dates);
+      if (String(base.lastReplacedOn ?? '') !== String(change.lastReplacedOn ?? '')) {
+        plan.historyConflicts.push(no);
+      }
+      Object.assign(base, change);
+    } else {
+      // 履歴を運んでいないCSVから「貼り替えがあった」とは判断できない。
+      // 推測して足すと、Excel側での打ち直しまで実績として数えてしまう
+      Object.assign(base, correctLatest(existing ?? {}, String(base.lastReplacedOn ?? '')));
+    }
+
     if (existing === undefined) {
       plan.add.push({ poster: base });
     } else {
@@ -146,4 +182,24 @@ export function buildImportPlan(rows, posters, columns, mode) {
   }
 
   return plan;
+}
+
+/**
+ * 見出しが貼替履歴の列なら、その順番（1始まり）を返す。
+ *
+ * '貼替1' '貼替12' のように、語のうしろが数字だけのものを拾う。
+ * '貼替日' のような別の意味の見出しは拾わない。
+ *
+ * @param {string} label
+ * @returns {number | null}
+ */
+function historyOrderOf(label) {
+  const text = String(label ?? '').trim();
+  if (!text.startsWith(HISTORY_PREFIX)) return null;
+
+  const rest = text.slice(HISTORY_PREFIX.length);
+  if (!/^\d+$/.test(rest)) return null;
+
+  const order = Number(rest);
+  return order >= 1 ? order : null;
 }

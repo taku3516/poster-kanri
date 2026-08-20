@@ -145,6 +145,27 @@ test('一括更新は指定した項目だけを書き換える', async () => {
   assert.equal(byNo['002'].owner, '鈴木');
 });
 
+test('行ごとに違う内容を当てられる', async () => {
+  // 貼替履歴のように「今その行が何を持っているか」で書く内容が変わる更新は、
+  // 共通の patch では表せない。
+  const db = newDb();
+  const id = await db.createCandidate(uid, '山田');
+  const a = await db.createPoster(uid, id, { no: '001', note: '朝のみ' });
+  const b = await db.createPoster(uid, id, { no: '002', note: '' });
+
+  const count = await db.updatePostersEach(uid, id, [
+    { id: a, patch: { replacements: ['2026-08-01'], lastReplacedOn: '2026-08-01' } },
+    { id: b, patch: { replacements: ['2024-01-01', '2026-08-01'], lastReplacedOn: '2026-08-01' } },
+  ]);
+
+  assert.equal(count, 2);
+  const posters = await db.listPosters(uid, id);
+  const byNo = Object.fromEntries(posters.map((p) => [p.no, p]));
+  assert.deepEqual(byNo['001'].replacements, ['2026-08-01']);
+  assert.deepEqual(byNo['002'].replacements, ['2024-01-01', '2026-08-01']);
+  assert.equal(byNo['001'].note, '朝のみ'); // 触っていない項目は残る
+});
+
 test('まとめて足せる（件数が多くても分割せず入る）', async () => {
   const db = newDb();
   const id = await db.createCandidate(uid, '山田');

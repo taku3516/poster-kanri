@@ -12,7 +12,7 @@
 // 端末内で扱う件数（多くて数千件）では絞り込みの費用が問題にならず、
 // 保存の入れ物を単純に保てるため。
 
-import { defaultColumns } from './schema.js';
+import { defaultColumns, withSystemColumns } from './schema.js';
 
 /**
  * 未ログイン時の利用者ID。
@@ -102,7 +102,7 @@ export function createLocalDb(storage) {
       id: c.id,
       name: c.name ?? '(名称未設定)',
       archived: c.archived === true,
-      columns: c.columns ?? defaultColumns(),
+      columns: withSystemColumns(c.columns ?? defaultColumns()),
       colorRules: c.colorRules ?? [],
       activeRuleId: c.activeRuleId ?? '',
     }));
@@ -387,6 +387,38 @@ export function createLocalDb(storage) {
     return posterIds.length;
   }
 
+  /**
+   * 行ごとに違う内容を当てる。
+   *
+   * 貼替履歴のように「その行がいま何を持っているか」で書く内容が変わる更新は、
+   * 共通の patch では表せないため、行ごとの差分を受け取る。
+   *
+   * @param {string} _uid
+   * @param {string} candidateId
+   * @param {{id: string, patch: Record<string, *>}[]} patches
+   * @returns {Promise<number>} 書き換えた件数
+   */
+  async function updatePostersEach(_uid, candidateId, patches) {
+    const byId = new Map(patches.map((p) => [p.id, p.patch]));
+    const all = await storage.getAll(POSTERS);
+
+    let count = 0;
+    for (const poster of all) {
+      const patch = byId.get(poster.id);
+      if (patch === undefined) continue;
+      await storage.put(POSTERS, {
+        ...poster,
+        ...patch,
+        updatedAt: Date.now(),
+        updatedBy: LOCAL_UID,
+      });
+      count += 1;
+    }
+
+    await notify(candidateId);
+    return count;
+  }
+
   return {
     listCandidates,
     createCandidate,
@@ -405,6 +437,7 @@ export function createLocalDb(storage) {
     deletePoster,
     createPostersBulk,
     updatePostersBulk,
+    updatePostersEach,
   };
 }
 

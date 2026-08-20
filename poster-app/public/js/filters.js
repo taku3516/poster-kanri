@@ -7,6 +7,7 @@
 
 import { filterPosters } from './table.js';
 import { daysSince, lastRefreshedOn } from './stats.js';
+import { historyOf } from './replacements.js';
 
 /**
  * 絞り込みに使える「条件」。値が true のものだけを残す。
@@ -28,6 +29,19 @@ export const DAYS_OPTIONS = Object.freeze([
 ]);
 
 /**
+ * 貼替回数の選択肢。3 は「3回以上」を表す。
+ * ダッシュボードの分布と同じ区切りにしてある。
+ * 同じデータなのに画面ごとに区切りが違うと、件数が食い違って見えるため。
+ */
+export const TIMES_OPTIONS = Object.freeze([
+  { value: null, label: 'すべて' },
+  { value: 0, label: '0回' },
+  { value: 1, label: '1回' },
+  { value: 2, label: '2回' },
+  { value: 3, label: '3回以上' },
+]);
+
+/**
  * @typedef {object} Filters
  * @property {string} text        文字の検索
  * @property {string} district    地区（空はすべて）
@@ -35,6 +49,7 @@ export const DAYS_OPTIONS = Object.freeze([
  * @property {string} introducer  紹介者（空はすべて）
  * @property {string[]} flags     すべて満たす条件
  * @property {number|null} minDays 経過日数の下限
+ * @property {number|null} times   貼替回数（3 は「3回以上」。null は問わない）
  * @property {boolean} onlyNoCoord 座標が無いものだけ
  */
 
@@ -45,7 +60,7 @@ export const DAYS_OPTIONS = Object.freeze([
 export function emptyFilters() {
   return {
     text: '', district: '', status: '', introducer: '',
-    flags: [], minDays: null, onlyNoCoord: false,
+    flags: [], minDays: null, times: null, onlyNoCoord: false,
   };
 }
 
@@ -61,6 +76,8 @@ export function isFiltered(filters) {
     || (filters.introducer ?? '') !== ''
     || (filters.flags ?? []).length > 0
     || filters.minDays !== null
+    // times は 0 を取る。真偽で見ると「0回で絞っている」を見落とす
+    || (filters.times ?? null) !== null
     || filters.onlyNoCoord === true;
 }
 
@@ -102,6 +119,15 @@ export function applyFilters(posters, columns, filters, today) {
     });
   }
 
+  const times = filters.times ?? null;
+  if (times !== null) {
+    rows = rows.filter((p) => {
+      const count = historyOf(p).length;
+      // 最後の区切りは「以上」。区切りを増やしても端が漏れない
+      return times >= 3 ? count >= 3 : count === times;
+    });
+  }
+
   if (filters.onlyNoCoord === true) {
     rows = rows.filter((p) => typeof p.lat !== 'number' || typeof p.lng !== 'number');
   }
@@ -133,6 +159,12 @@ export function describeFilters(filters) {
   if (filters.minDays !== null) {
     const found = DAYS_OPTIONS.find((o) => o.value === filters.minDays);
     parts.push(found === undefined ? filters.minDays + '日以上' : found.label);
+  }
+
+  const times = filters.times ?? null;
+  if (times !== null) {
+    const found = TIMES_OPTIONS.find((o) => o.value === times);
+    parts.push('貼替 ' + (found === undefined ? times + '回' : found.label));
   }
 
   if (filters.onlyNoCoord === true) parts.push('座標なし');

@@ -29,6 +29,7 @@ export const COLUMN_TYPES = ['text', 'number', 'date', 'check', 'select'];
  * @property {boolean} visible 一覧に出すか
  * @property {boolean} system  固定項目なら true（削除できない）
  * @property {string} group    画面上のまとまり
+ * @property {boolean} [readOnly] 直接は書けない列（保存せず導く値）
  * @property {*} [defaultValue] 型ごとの既定値と異なる場合だけ指定する
  */
 
@@ -72,6 +73,9 @@ export const SYSTEM_COLUMNS = Object.freeze([
   { key: 'coordFixed', label: '座標確定', type: 'check', system: true, group: '地図' },
   // 削除ではなく状態で持てば履歴が残る
   { key: 'status',     label: '状態',   type: 'select', system: true, group: '管理', defaultValue: '掲示中' },
+  // 貼替履歴の件数。保存せず読むたびに数える（table.js）。
+  // 二重に持つと、片方だけ古くなったときに食い違うため
+  { key: 'replaceCount', label: '貼替回数', type: 'number', system: true, group: '日付', readOnly: true },
 ]);
 
 /** CSVの先頭に置く24列。現行Excelの並びと一致させる。 */
@@ -111,6 +115,33 @@ function defaultForColumn(column) {
  */
 export function defaultColumns() {
   return SYSTEM_COLUMNS.map((c, i) => ({ ...c, order: i, visible: true }));
+}
+
+/**
+ * 保存済みの列定義に、後から増えた固定項目を足して返す。
+ *
+ * 列定義は候補者ごとに保存されるため、`SYSTEM_COLUMNS` に項目を足しても
+ * 既にある台帳には現れない。読むときにここで補う。
+ *
+ * 既にある列には触らない。利用者が変えた表示名・並び・表示/非表示を
+ * 上書きしないため。足す列は末尾に置く。
+ *
+ * @param {Column[]} columns
+ * @returns {Column[]}
+ */
+export function withSystemColumns(columns) {
+  const list = Array.isArray(columns) ? columns : [];
+  const known = new Set(list.map((c) => c.key));
+
+  let order = list.reduce((m, c) => Math.max(m, c.order ?? 0), -1);
+  const missing = SYSTEM_COLUMNS
+    .filter((c) => !known.has(c.key))
+    .map((c) => {
+      order += 1;
+      return { ...c, order, visible: true };
+    });
+
+  return missing.length === 0 ? list : [...list, ...missing];
 }
 
 /**
@@ -222,6 +253,8 @@ export function createEmptyPoster(columns) {
   const poster = { custom: {} };
 
   for (const column of columns) {
+    // 導出する列は保存しない
+    if (column.readOnly === true) continue;
     if (column.system) {
       poster[column.key] = defaultForColumn(column);
     } else {

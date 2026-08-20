@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { defaultColumns, addCustomColumn } from '../public/js/schema.js';
 import {
   parseCsv, buildCsv, csvHeader, toCheckValue, fromCheckValue, decodeCsvBytes, withBom,
+  historyHeaders,
 } from '../public/js/csv.js';
 
 const columns = defaultColumns();
@@ -138,4 +139,48 @@ test('Shift_JISを読める', () => {
 test('書き出しにはBOMを付ける（Excelで文字化けさせないため）', () => {
   const bytes = withBom('あ');
   assert.deepEqual([...bytes.slice(0, 3)], [0xEF, 0xBB, 0xBF]);
+});
+
+// ------------------------------------------------------------ 貼替履歴の列
+
+/** 貼替履歴の検査用。空のポスター @param {object} f */
+const h = (f) => ({ no: '', lastReplacedOn: null, custom: {}, ...f });
+
+test('貼替履歴を 貼替1 貼替2 … の列として書き出す', () => {
+  // CSVは平らな形式で入れ子を運べない。履歴は列に開くしかない。
+  const cols = defaultColumns();
+  const posters = [
+    h({ no: '001', replacements: ['2024-03-01', '2025-11-10'] }),
+    h({ no: '002', replacements: ['2025-06-05'] }),
+  ];
+
+  assert.deepEqual(historyHeaders(posters), ['貼替1', '貼替2']);
+
+  const rows = parseCsv(buildCsv(posters, cols));
+  const header = rows[0];
+  assert.equal(header[header.length - 2], '貼替1');
+  assert.equal(header[header.length - 1], '貼替2');
+
+  const at = (row, label) => row[header.indexOf(label)];
+  assert.equal(at(rows[1], '貼替1'), '2024-03-01');
+  assert.equal(at(rows[1], '貼替2'), '2025-11-10');
+
+  // 回数の少ない行は右側が空欄になる
+  assert.equal(at(rows[2], '貼替2'), '');
+});
+
+test('履歴を持たない台帳では貼替の列を出さない', () => {
+  // 一度も貼り替えていない台帳に空列を並べても読みにくくなるだけ。
+  const posters = [h({ no: '001' })];
+  assert.deepEqual(historyHeaders(posters), []);
+  assert.ok(!parseCsv(buildCsv(posters, defaultColumns()))[0].includes('貼替1'));
+});
+
+test('最新貼替日しか無い既存データも、貼替1 として書き出す', () => {
+  // 履歴を持たない行を「1件の履歴」として読む扱いと揃える。
+  const posters = [h({ no: '001', lastReplacedOn: '2025-11-10' })];
+  assert.deepEqual(historyHeaders(posters), ['貼替1']);
+
+  const rows = parseCsv(buildCsv(posters, defaultColumns()));
+  assert.equal(rows[1][rows[0].indexOf('貼替1')], '2025-11-10');
 });

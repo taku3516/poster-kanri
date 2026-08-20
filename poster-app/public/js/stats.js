@@ -5,6 +5,8 @@
 //
 // Firestore に依存しない純粋な関数だけを置く。
 
+import { historyOf } from './replacements.js';
+
 /** ポスターの種別（枚数を持つ列） */
 const TYPE_KEYS = ['size3L', 'size3S', 'size2L', 'size2S'];
 
@@ -267,11 +269,13 @@ export function monthlyReplacements(posters, today, months) {
     slots.set(key, 0);
   }
 
-  for (const poster of posters.filter((p) => !isRemoved(p))) {
-    const text = String(poster.lastReplacedOn ?? '').trim();
-    if (text === '') continue;
-    const key = text.slice(0, 7);
-    if (slots.has(key)) slots.set(key, slots.get(key) + 1);
+  // 撤去済の場所も数える。実績は「その月に行った作業」であり、
+  // 今どうなっているかで過去を書き換えないため。
+  for (const poster of posters) {
+    for (const date of historyOf(poster)) {
+      const key = date.slice(0, 7);
+      if (slots.has(key)) slots.set(key, slots.get(key) + 1);
+    }
   }
 
   return [...slots.entries()].map(([month2, count]) => ({ month: month2, count }));
@@ -304,4 +308,32 @@ export function byOwner(posters) {
     .filter((row) => row.count >= 2)
     .sort((a, b) => b.count - a.count || b.sheets - a.sheets
       || a.owner.localeCompare(b.owner, 'ja'));
+}
+
+/**
+ * 貼替回数ごとの件数。
+ *
+ * **一番見たいのは「0回」。** 掲示してから一度も貼り替えていない場所が
+ * 何件あるかが、次に回る場所を決める材料になる。
+ * 該当が無い区分も 0 として並べる（並べないと、無いこと自体が見えない）。
+ *
+ * 撤去済は数えない。いま管理している場所についての話のため。
+ *
+ * @param {Record<string, *>[]} posters
+ * @returns {{label: string, count: number, times: number}[]} times は絞り込み用の回数。3 は「3回以上」
+ */
+export function replaceCountDistribution(posters) {
+  const rows = [
+    { label: '0回', count: 0, times: 0 },
+    { label: '1回', count: 0, times: 1 },
+    { label: '2回', count: 0, times: 2 },
+    { label: '3回以上', count: 0, times: 3 },
+  ];
+
+  for (const poster of posters.filter((p) => !isRemoved(p))) {
+    const times = historyOf(poster).length;
+    rows[Math.min(times, 3)].count += 1;
+  }
+
+  return rows;
 }

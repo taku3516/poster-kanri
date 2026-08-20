@@ -143,6 +143,7 @@
           <select class="select" id="filter-district" aria-label="地区で絞り込む"></select>
           <select class="select" id="filter-status" aria-label="状態で絞り込む"></select>
           <select class="select" id="filter-days" aria-label="経過期間で絞り込む"></select>
+          <select class="select" id="filter-times" aria-label="貼替回数で絞り込む"></select>
           <span class="filter-flags" id="filter-flags"></span>
           <label class="map-toggle">
             <input type="checkbox" id="filter-nocoord">座標なしのみ
@@ -266,6 +267,15 @@
           押すとその条件で一覧が開きます。
         </p>
         <div class="bars" id="bars-age"></div>
+      </div>
+
+      <div class="panel">
+        <h2>貼替の回数</h2>
+        <p class="text-sub">
+          掲示してから何回貼り替えたかです。<strong>0回</strong>は一度も貼り替えていない場所で、
+          掲示日から動いていません。
+        </p>
+        <div class="bars" id="bars-replace-count"></div>
       </div>
 
       <div class="panel">
@@ -483,6 +493,15 @@
   <form method="dialog" class="dialog__form" id="edit-form">
     <h2 class="dialog__title" id="edit-title">掲示場所の編集</h2>
     <div class="dialog__body" id="edit-fields"></div>
+
+    <!-- 現地で「貼り替えた」を記録する経路。
+         「最新貼替日」の欄を直すのは入力の訂正で、履歴は増えない。 -->
+    <div class="dialog__replace" id="edit-replace-area">
+      <button type="button" class="button button--quiet" id="edit-replaced-today">
+        今日 貼り替えた
+      </button>
+      <span class="dialog__replace-note" id="edit-replace-count"></span>
+    </div>
 
     <div class="notice notice--error" id="edit-error" hidden>
       <span class="notice__label">エラー</span><span id="edit-error-text"></span>

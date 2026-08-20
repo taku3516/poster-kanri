@@ -26,15 +26,16 @@ import {
 import { createMap } from './map.js';
 import {
   emptyFilters, isFiltered, applyFilters, describeFilters, nextPosterNo,
-  FLAG_OPTIONS, DAYS_OPTIONS,
+  FLAG_OPTIONS, DAYS_OPTIONS, TIMES_OPTIONS,
 } from './filters.js';
 import { distanceOf, formatDistance, sortByDistance } from './distance.js';
 import {
   summarize, byDistrict, stalest, lastRefreshedOn, ageDistribution, byIntroducer,
-  monthlyReplacements, byOwner,
+  monthlyReplacements, byOwner, replaceCountDistribution,
 } from './stats.js';
 import { coverageByTown, formatPer10k, BASIS } from './coverage.js';
 import { hasChanges } from './changes.js';
+import { historyOf, addReplacement, correctLatest } from './replacements.js';
 import { parseCsv, buildCsv, csvColumns, decodeCsvBytes, withBom } from './csv.js';
 import { buildImportPlan } from './import-plan.js';
 import { TOWN_POPULATION, POPULATION_AS_OF } from './population.js';
@@ -889,8 +890,58 @@ async function start() {
     }
   }
 
+  /**
+   * 選んだ行に「今日貼り替えた」を記録する。
+   *
+   * 行ごとに履歴が違うため、共通の内容ではなく行ごとの差分を作る。
+   * 既に今日の記録がある行は書かない（二度押しで実績が二重にならない）。
+   *
+   * @returns {Promise<void>}
+   */
+  async function markReplacedToday() {
+    const candidate = current();
+    if (candidate === undefined || state.selected.size === 0) return;
+
+    const today = todayText();
+
+    /** @type {{id: string, patch: Record<string, *>}[]} */
+    const patches = [];
+    for (const poster of state.posters) {
+      if (!state.selected.has(poster.id)) continue;
+
+      const change = addReplacement(poster, today);
+      if (change === null) continue;
+
+      const stored = Array.isArray(poster.replacements) ? poster.replacements : null;
+      const unchanged = stored !== null
+        && stored.join(',') === change.replacements.join(',')
+        && (poster.lastReplacedOn ?? null) === change.lastReplacedOn;
+      if (unchanged) continue;
+
+      patches.push({ id: poster.id, patch: change });
+    }
+
+    if (patches.length === 0) {
+      showError('list-error', 'list-error-text', '選んだ行には既に ' + today + ' の貼替が記録されています。');
+      return;
+    }
+
+    if (!window.confirm(
+      patches.length + ' 件に ' + today + ' の貼替を記録します。\n元に戻せません。よろしいですか？',
+    )) return;
+
+    try {
+      showError('list-error', 'list-error-text', '');
+      await db.updatePostersEach(state.uid, candidate.id, patches);
+      state.selected.clear();
+      renderTable();
+    } catch (error) {
+      showError('list-error', 'list-error-text', toMessage(error));
+    }
+  }
+
   el('bulk-today').addEventListener('click', () => {
-    void applyBulk({ lastReplacedOn: todayText() }, '貼替日を ' + todayText() + ' にします');
+    void markReplacedToday();
   });
 
   el('bulk-status').addEventListener('change', (event) => {
@@ -1002,6 +1053,15 @@ async function start() {
       return node;
     }));
 
+    const times = /** @type {HTMLSelectElement} */ (el('filter-times'));
+    times.replaceChildren(...TIMES_OPTIONS.map((option) => {
+      const node = document.createElement('option');
+      node.value = option.value === null ? '' : String(option.value);
+      node.textContent = option.value === null ? '貼替回数は問わない' : '貼替 ' + option.label;
+      node.selected = option.value === (state.filters.times ?? null);
+      return node;
+    }));
+
     el('filter-flags').replaceChildren(...FLAG_OPTIONS.map((option) => {
       const label = document.createElement('label');
       const input = document.createElement('input');
@@ -1033,6 +1093,12 @@ async function start() {
   el('filter-days').addEventListener('change', (event) => {
     const value = /** @type {HTMLSelectElement} */ (event.target).value;
     state.filters.minDays = value === '' ? null : Number(value);
+    onFiltersChanged();
+  });
+
+  el('filter-times').addEventListener('change', (event) => {
+    const value = /** @type {HTMLSelectElement} */ (event.target).value;
+    state.filters.times = value === '' ? null : Number(value);
     onFiltersChanged();
   });
 
@@ -1165,6 +1231,14 @@ async function start() {
 
     const text = formatValue(posterValue(poster, column), column.type);
     td.textContent = text;
+
+    // 導出する列は直せない。押せるように見せると、直したのに戻ると受け取られる
+    if (column.readOnly === true) {
+      td.classList.add('is-derived');
+      td.title = 'この列は他の記録から自動で数えています';
+      return td;
+    }
+
     td.classList.add('is-editable');
     td.title = '押すとこの場で直せます';
     td.addEventListener('click', (event) => {
@@ -1292,6 +1366,15 @@ async function start() {
   function buildField(column) {
     const value = posterValue(state.draft, column);
 
+    // 導出する列は入力欄にしない。書けない欄を入力欄の形で出さない
+    if (column.readOnly === true) {
+      const span = document.createElement('span');
+      span.className = 'form-grid__derived';
+      span.id = 'f-' + column.key;
+      span.textContent = formatValue(value, column.type);
+      return span;
+    }
+
     if (column.type === 'check') {
       const input = document.createElement('input');
       input.type = 'checkbox';
@@ -1397,8 +1480,49 @@ async function start() {
     }
 
     el('edit-fields').replaceChildren(grid);
+    renderReplaceArea(poster === null);
     /** @type {HTMLDialogElement} */ (el('edit-dialog')).showModal();
   }
+
+  /**
+   * 貼替の記録欄を描く。
+   *
+   * 新規登録では出さない。まだ貼っていない場所に「貼り替えた」は無いため。
+   *
+   * @param {boolean} isNew
+   * @returns {void}
+   */
+  function renderReplaceArea(isNew) {
+    el('edit-replace-area').hidden = isNew;
+    if (isNew) return;
+
+    const history = historyOf(state.draft ?? {});
+    el('edit-replace-count').textContent = history.length === 0
+      ? 'まだ貼替の記録がありません'
+      : '貼替の記録 ' + history.length + ' 件（最新 ' + history[history.length - 1] + '）';
+  }
+
+  el('edit-replaced-today').addEventListener('click', () => {
+    if (state.draft === null) return;
+
+    const today = todayText();
+    const change = addReplacement(state.draft, today);
+    if (change === null) return;
+
+    if (historyOf(state.draft).includes(today)) {
+      showError('edit-error', 'edit-error-text', today + ' の貼替は既に記録されています。');
+      return;
+    }
+
+    showError('edit-error', 'edit-error-text', '');
+    state.draft = { ...state.draft, ...change };
+
+    // 「最新貼替日」の欄も合わせる。欄と記録が食い違って見えないようにする
+    const field = /** @type {HTMLInputElement | null} */ (document.getElementById('f-lastReplacedOn'));
+    if (field !== null) field.value = change.lastReplacedOn ?? '';
+
+    renderReplaceArea(false);
+  });
 
   el('poster-add').addEventListener('click', () => openEditor(null));
 
@@ -1432,6 +1556,7 @@ async function start() {
       coordFixed: false,
       postedOn: null,
       lastReplacedOn: null,
+      replacements: [],
     });
   });
   /**
@@ -1457,16 +1582,52 @@ async function start() {
     event.preventDefault();
   });
 
+  /**
+   * 編集内容の「最新貼替日」を貼替履歴に反映する。
+   *
+   * **欄を直す操作は「貼り替えた」ではなく「入力を直した」とみなす。**
+   * 履歴の件数を増やさないため、打ち間違いを直しても実績が水増しされない。
+   * 貼り替えたことの記録は「選んだ行を今日にする」で足す。
+   *
+   * 保存は merge:false（書かない項目は消える）なので、
+   * 欄を触っていない場合も履歴を必ず持たせて渡す。
+   *
+   * @param {Record<string, *> | null} original 編集前。新規なら null
+   * @param {Record<string, *>} draft 保存しようとしている内容
+   * @returns {Record<string, *>}
+   */
+  function withReplacementHistory(original, draft) {
+    const before = historyOf(original ?? {});
+    const drafted = Array.isArray(draft.replacements) ? draft.replacements : null;
+
+    // 「今日 貼り替えた」で履歴を足していれば、それをそのまま通す
+    if (drafted !== null && drafted.join(',') !== before.join(',')) {
+      return { ...draft, replacements: drafted, lastReplacedOn: drafted[drafted.length - 1] ?? null };
+    }
+
+    const after = draft.lastReplacedOn ?? null;
+
+    // 欄を触っていないなら履歴も動かさない。
+    // 履歴を持たない既存データには、ここで履歴を作っておく
+    if (original !== null && (original.lastReplacedOn ?? null) === after) {
+      return { ...draft, replacements: before };
+    }
+
+    return { ...draft, ...correctLatest(original ?? {}, String(after ?? '')) };
+  }
+
   el('edit-save').addEventListener('click', async () => {
     const candidate = current();
     if (candidate === undefined || state.draft === null) return;
 
+    const poster = withReplacementHistory(state.editingOriginal, state.draft);
+
     try {
       showError('edit-error', 'edit-error-text', '');
       if (state.editingId === null) {
-        await db.createPoster(state.uid, candidate.id, state.draft);
+        await db.createPoster(state.uid, candidate.id, poster);
       } else {
-        await db.savePoster(state.uid, candidate.id, state.editingId, state.draft);
+        await db.savePoster(state.uid, candidate.id, state.editingId, poster);
       }
       state.editingOriginal = null;
       state.draft = null;
@@ -2210,6 +2371,17 @@ async function start() {
       })),
       ' 件');
 
+    // --- 貼替の回数 ---
+    renderBars('bars-replace-count',
+      replaceCountDistribution(state.posters).map((row) => ({
+        label: row.label,
+        // 一度も貼り替えていない場所が一番見たいもの
+        value: row.count,
+        tone: row.times === 0 ? 'attention' : undefined,
+        onClick: () => focusList({ times: row.times }),
+      })),
+      ' 件');
+
     // --- 月別の貼替実績 ---
     renderBars('bars-monthly',
       monthlyReplacements(state.posters, today, 12).map((row) => ({
@@ -2440,6 +2612,12 @@ async function start() {
     }
     if (plan.remove.length > 0) {
       warnings.push('全置換のため、CSVに無い ' + plan.remove.length + ' 件が削除されます。');
+    }
+    if (plan.historyConflicts.length > 0) {
+      // 黙って捨てない。どちらを採ったかを言う
+      warnings.push('「貼替」の列と「最新貼替日」が食い違う行があります: '
+        + plan.historyConflicts.join('、')
+        + '（貼替の列を正として取り込みます）');
     }
     el('import-warnings').hidden = warnings.length === 0;
     el('import-warning-list').replaceChildren(...warnings.map((text) => {

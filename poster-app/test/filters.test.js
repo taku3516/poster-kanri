@@ -159,3 +159,64 @@ test('紹介者の絞り込みも説明に出る', () => {
   assert.ok(text.includes('田中'));
   assert.ok(text.includes('紹介者'));
 });
+
+// -------------------------------------------------------------- 貼替の回数
+
+test('貼替回数で絞り込める', async () => {
+  const { applyFilters, emptyFilters } = await import('../public/js/filters.js');
+  const list = [
+    p({ no: '1', replacements: [] }),
+    p({ no: '2', replacements: ['2024-01-01'] }),
+    p({ no: '3', replacements: ['2024-01-01', '2025-01-01'] }),
+  ];
+
+  const only = (times) => applyFilters(list, columns, { ...emptyFilters(), times }, TODAY)
+    .map((x) => x.no);
+
+  assert.deepEqual(only(0), ['1']);
+  assert.deepEqual(only(1), ['2']);
+  assert.deepEqual(only(2), ['3']);
+});
+
+test('3回以上はまとめて残す', async () => {
+  const { applyFilters, emptyFilters } = await import('../public/js/filters.js');
+  const list = [
+    p({ no: '1', replacements: ['a'] }),
+    p({ no: '2', replacements: ['2022-01-01', '2023-01-01', '2024-01-01'] }),
+    p({ no: '3', replacements: ['2021-01-01', '2022-01-01', '2023-01-01', '2024-01-01'] }),
+  ];
+
+  const rows = applyFilters(list, columns, { ...emptyFilters(), times: 3 }, TODAY);
+  assert.deepEqual(rows.map((x) => x.no), ['2', '3']);
+});
+
+test('0回の絞り込みは「絞っている」と数える', async () => {
+  // times が 0 なので、真偽で見ると絞っていない扱いになってしまう。
+  const { isFiltered, emptyFilters, describeFilters } = await import('../public/js/filters.js');
+  const filters = { ...emptyFilters(), times: 0 };
+
+  assert.equal(isFiltered(filters), true);
+  assert.ok(describeFilters(filters).includes('0回'));
+});
+
+test('回数を指定しなければ何も落とさない', async () => {
+  const { applyFilters, emptyFilters } = await import('../public/js/filters.js');
+  const list = [p({ no: '1', replacements: [] }), p({ no: '2', replacements: ['2024-01-01'] })];
+
+  const rows = applyFilters(list, columns, emptyFilters(), TODAY);
+  assert.equal(rows.length, 2);
+});
+
+test('履歴を持たない既存データは、最新貼替日があれば1回として絞られる', async () => {
+  const { applyFilters, emptyFilters } = await import('../public/js/filters.js');
+  const list = [p({ no: '1', lastReplacedOn: '2025-01-01' }), p({ no: '2' })];
+
+  assert.deepEqual(
+    applyFilters(list, columns, { ...emptyFilters(), times: 1 }, TODAY).map((x) => x.no),
+    ['1'],
+  );
+  assert.deepEqual(
+    applyFilters(list, columns, { ...emptyFilters(), times: 0 }, TODAY).map((x) => x.no),
+    ['2'],
+  );
+});
