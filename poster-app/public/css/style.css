@@ -460,6 +460,19 @@ p:last-child { margin-bottom: 0; }
 
 .toolbar .input { flex: 1 1 240px; max-width: 360px; }
 
+/* 共有の並び。何が含まれるかを操作の隣に置く（押す前に読めるように） */
+.toolbar--share { gap: var(--space-3); }
+.toolbar--share .text-sub { margin: 0; }
+
+.share-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* 氏名を含めているあいだは、注意の色で出す */
+#share-scope.is-personal { color: var(--red); }
+
 /* ------------------------------------------------------------------ */
 /* 表                                                                  */
 /* ------------------------------------------------------------------ */

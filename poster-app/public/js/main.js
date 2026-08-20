@@ -43,6 +43,8 @@ import {
   PALETTE, modeForColumn, defaultRuleFor, REFRESHED_FIELD, bucketOf, buildLegend,
 } from './color-rules.js';
 import { geocodeAddress, reverseGeocode } from './geocode.js';
+import { buildShareSummary, summaryToText, postersToText } from './share.js';
+import { drawSummary } from './share-image.js';
 
 /** @param {string} id @returns {HTMLElement} */
 function el(id) {
@@ -1170,6 +1172,60 @@ async function start() {
 
   el('list-print').addEventListener('click', printList);
 
+  /**
+   * いま一覧に出ている行を、そのまま送れる文章にして共有する。
+   *
+   * 絞り込んだ結果を送る形にしてある（「脚立が要る場所だけ」など）。
+   * 台帳を丸ごと送るより、**送る範囲を自分で決めてから送る**方が安全で、
+   * 受け取る側にとっても読める量になる。
+   *
+   * 氏名と連絡先は、その場で確認を取ったときだけ含める。
+   *
+   * @returns {Promise<void>}
+   */
+  async function shareList() {
+    const candidate = current();
+    if (candidate === undefined) return;
+
+    const rows = visibleRows();
+    if (rows.length === 0) {
+      showError('list-error', 'list-error-text', '共有できる行がありません。');
+      return;
+    }
+
+    const includeContact = window.confirm(
+      rows.length + ' 件を共有します。\n\n'
+      + '所有者・紹介者の氏名と、電話・携帯・メール・連絡先住所も含めますか？\n\n'
+      + '［OK］含める　／　［キャンセル］含めない\n\n'
+      + '含めた場合、送り先の端末とトーク履歴に残り、転送もでき、取り消せません。',
+    );
+
+    const text = postersToText(rows, candidate.columns, {
+      title: candidate.name + ' ポスター掲示場所',
+      asOf: todayText(),
+      condition: isFiltered(state.filters) ? describeFilters(state.filters) : '',
+      includeContact,
+    });
+
+    try {
+      showError('list-error', 'list-error-text', '');
+
+      if (typeof navigator.share === 'function') {
+        await navigator.share({ text });
+        return;
+      }
+
+      await navigator.clipboard.writeText(text);
+      showError('list-error', 'list-error-text',
+        '文章をコピーしました。貼り付けて送れます。');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      showError('list-error', 'list-error-text', toMessage(error));
+    }
+  }
+
+  el('list-share').addEventListener('click', () => void shareList());
+
   // ================================================================ 表の中で直接編集
 
   /**
@@ -1654,6 +1710,145 @@ async function start() {
     }
   });
 
+
+  // ================================================================ 外部への共有
+
+  /**
+   * 共有する内容を組み立てる。
+   *
+   * **氏名・連絡先・掲示住所は入らない**（判断は share.js 側にある）。
+   * ここで対象にするのは撤去済を含む台帳全体ではなく、いま画面に出ている
+   * ダッシュボードと同じ集計。画面と送ったものが食い違わないようにする。
+   *
+   * @returns {import('./share.js').ShareSummary | null}
+   */
+  function currentShareSummary() {
+    const candidate = current();
+    if (candidate === undefined) return null;
+
+    return buildShareSummary(state.posters, todayText(), candidate.name, {
+      includePersonal: /** @type {HTMLInputElement} */ (el('share-personal')).checked,
+    });
+  }
+
+  /**
+   * いま何を共有しようとしているのかを、操作の隣に出す。
+   *
+   * 送ってからでは取り消せないので、押す前に読める位置に置く。
+   *
+   * @returns {void}
+   */
+  function renderShareScope() {
+    const on = /** @type {HTMLInputElement} */ (el('share-personal')).checked;
+    const note = el('share-scope');
+
+    note.classList.toggle('is-personal', on);
+    note.textContent = on
+      ? '所有者・紹介者の氏名と、掲示場所・掲示住所を含めます。'
+        + '送った先の端末とトーク履歴に残り、転送もでき、取り消せません。'
+      : '件数と地区名だけを含めます。氏名・掲示住所・連絡先は入りません。';
+  }
+
+  el('share-personal').addEventListener('change', () => {
+    showShareDone('');
+    renderShareScope();
+  });
+
+  /**
+   * 共有できたことを短く知らせる。
+   * @param {string} message
+   * @returns {void}
+   */
+  function showShareDone(message) {
+    showError('share-error', 'share-error-text', '');
+    el('share-done').hidden = message === '';
+    el('share-done-text').textContent = message;
+  }
+
+  /**
+   * ダッシュボードを画像にして共有する。
+   *
+   * 共有シートに対応していない環境（多くのパソコン）では画像を保存する。
+   * 「共有できません」で終わらせず、手で送れる形にして渡す。
+   *
+   * @returns {Promise<void>}
+   */
+  async function shareDashboardImage() {
+    const summary = currentShareSummary();
+    if (summary === null) return;
+
+    try {
+      showShareDone('');
+      showError('share-error', 'share-error-text', '');
+
+      const canvas = document.createElement('canvas');
+      drawSummary(canvas, summary);
+
+      const blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((b) => (b === null ? reject(new Error('画像を作れませんでした')) : resolve(b)), 'image/png');
+      });
+
+      const fileName = summary.title.replace(/\s+/g, '_') + '_' + summary.asOf + '.png';
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      if (typeof navigator.canShare === 'function'
+        && navigator.canShare({ files: [file] })
+        && typeof navigator.share === 'function') {
+        await navigator.share({ files: [file], title: summary.title });
+        showShareDone('共有しました。');
+        return;
+      }
+
+      // 共有シートが使えない環境。保存して手で送ってもらう
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+      showShareDone('この端末は共有シートに対応していないため、画像を保存しました。');
+    } catch (error) {
+      // 共有シートを閉じただけ。失敗として出すと、やめる操作が毎回エラーになる
+      if (error instanceof Error && error.name === 'AbortError') return;
+      showError('share-error', 'share-error-text', toMessage(error));
+    }
+  }
+
+  /**
+   * ダッシュボードの数字を文章にして写す。
+   *
+   * 画像は検索も引用もできない。文章なら送り先で拾える。
+   *
+   * @returns {Promise<void>}
+   */
+  async function shareDashboardText() {
+    const summary = currentShareSummary();
+    if (summary === null) return;
+
+    const text = summaryToText(summary);
+
+    try {
+      showShareDone('');
+      showError('share-error', 'share-error-text', '');
+
+      if (typeof navigator.share === 'function') {
+        await navigator.share({ text });
+        showShareDone('共有しました。');
+        return;
+      }
+
+      await navigator.clipboard.writeText(text);
+      showShareDone('文章をコピーしました。貼り付けて送れます。');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      showError('share-error', 'share-error-text', toMessage(error));
+    }
+  }
+
+  renderShareScope();
+
+  el('share-image').addEventListener('click', () => void shareDashboardImage());
+  el('share-text').addEventListener('click', () => void shareDashboardText());
 
   // ================================================================ 地図
 

@@ -137,6 +137,7 @@
           <button type="button" class="button button--quiet" id="poster-duplicate">選んだ行を複製</button>
           <button type="button" class="button button--quiet" id="list-locate">現在地から近い順</button>
           <button type="button" class="button button--quiet" id="list-print">印刷・持ち出し</button>
+          <button type="button" class="button button--quiet" id="list-share">この一覧を共有</button>
           <button type="button" class="button button--quiet" id="list-export">CSV書き出し</button>
         </div>
         <div class="toolbar toolbar--filters">
@@ -243,6 +244,26 @@
 
     <!-- ================= ダッシュボード ================= -->
     <div id="panel-dash" hidden>
+
+      <div class="toolbar toolbar--share">
+        <button type="button" class="button button--primary" id="share-image">
+          画像にして共有
+        </button>
+        <button type="button" class="button button--quiet" id="share-text">
+          文章をコピー
+        </button>
+        <label class="share-toggle">
+          <input type="checkbox" id="share-personal">
+          氏名・掲示住所も含める
+        </label>
+      </div>
+      <p class="text-sub" id="share-scope"></p>
+      <div class="notice notice--error" id="share-error" hidden>
+        <span class="notice__label">エラー</span><span id="share-error-text"></span>
+      </div>
+      <div class="notice notice--info" id="share-done" hidden>
+        <span class="notice__label">完了</span><span id="share-done-text"></span>
+      </div>
 
       <div class="kpis" id="kpi-row"></div>
 

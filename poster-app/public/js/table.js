@@ -99,7 +99,7 @@ export function parseValue(raw, type) {
  * @param {*} value
  * @returns {boolean}
  */
-function isBlank(value) {
+export function isBlank(value) {
   return value === null || value === undefined || value === '';
 }
 
